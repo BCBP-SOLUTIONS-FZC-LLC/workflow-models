@@ -27,6 +27,15 @@ go.work.sum
 # env file
 .env
 
+# macOS
+.DS_Store
+
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Claude Code agent worktrees (temporary, not project code)
+.claude/worktrees/
+
+# Build output
+bin/
