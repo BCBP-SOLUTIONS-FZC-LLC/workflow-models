@@ -250,4 +250,3 @@ git push origin v1.0.0
 | [CHANGELOG.md](./CHANGELOG.md) | Per-version changes |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | Development setup, PR checklist |
 | [SECURITY.md](./SECURITY.md) | Vulnerability reporting, trust model |
-| `design/LLD/workflow_models_lib.md` (`BCBP-SOLUTIONS-FZC-LLC/design` repo) | Full field-by-field design rationale |
