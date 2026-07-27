@@ -12,18 +12,21 @@ A type only one side reads or writes stays in that service's own domain package,
 
 ## Contents
 
-- [Package dependency graph](#package-dependency-graph)
-- [Scope boundary](#scope-boundary)
-- [Adding to a consumer service](#adding-to-a-consumer-service)
-- [Quick start — pkg/dsl](#quick-start--pkgdsl)
-- [Quick start — pkg/events](#quick-start--pkgevents)
-- [Package reference — pkg/dsl](#package-reference--pkgdsl)
-- [Package reference — pkg/events](#package-reference--pkgevents)
-- [Package reference — pkg/enums](#package-reference--pkgenums)
-- [Key invariants](#key-invariants)
-- [Testing model](#testing-model)
-- [Versioning and releases](#versioning-and-releases)
-- [See also](#see-also)
+- [workflow-models](#workflow-models)
+  - [Scope](#scope)
+  - [Contents](#contents)
+  - [Package dependency graph](#package-dependency-graph)
+  - [Scope boundary](#scope-boundary)
+  - [Adding to a consumer service](#adding-to-a-consumer-service)
+  - [Quick start — pkg/dsl](#quick-start--pkgdsl)
+  - [Quick start — pkg/events](#quick-start--pkgevents)
+  - [Package reference — pkg/dsl](#package-reference--pkgdsl)
+  - [Package reference — pkg/events](#package-reference--pkgevents)
+  - [Package reference — pkg/enums](#package-reference--pkgenums)
+  - [Key invariants](#key-invariants)
+  - [Testing model](#testing-model)
+  - [Versioning and releases](#versioning-and-releases)
+  - [See also](#see-also)
 
 ## Package dependency graph
 

@@ -15,7 +15,7 @@ one codebase:
 
 - **workflow-definition-service** *produces* every field in `pkg/dsl` (via
   its BPMN compiler) and every payload in `pkg/events`.
-- **The future Execution Service** *consumes* both, entirely — it drives its
+- **The Execution Service** *consumes* both, entirely — it drives its
   workflow function off `pkg/dsl` and refreshes its compiled-plan cache off
   `pkg/events.TemplatePublishedPayload`.
 

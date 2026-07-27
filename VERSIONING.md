@@ -1,7 +1,7 @@
 # Versioning and releases
 
 This repository is a **Go module** consumed by `workflow-definition-service`
-and the future Execution Service. Versions are published with **Git tags**
+and the Execution Service. Versions are published with **Git tags**
 and described in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Semantic versioning (SemVer)
