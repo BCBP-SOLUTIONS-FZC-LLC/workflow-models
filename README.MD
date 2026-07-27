@@ -1,6 +1,6 @@
 # workflow-models
 
-Shared Go module between `workflow-definition-service` and the future Execution Service — every type crossing that service boundary lives here once, instead of being hand-mirrored independently on each side.
+Shared Go module between Definition Service and Execution Service; every type crossing that service boundary lives here once, instead of being hand-mirrored independently on each side.
 
 ## Scope
 
