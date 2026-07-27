@@ -21,16 +21,22 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  validate:
-    name: Validate
-    uses: ./.github/workflows/validate.yml
+  validate-quality:
+    name: Validate / Quality
+    uses: ./.github/workflows/validate-quality.yml
+    with:
+      ref: ${{ github.event.inputs.tag || github.ref }}
+
+  validate-test:
+    name: Validate / Test
+    uses: ./.github/workflows/validate-test.yml
     with:
       ref: ${{ github.event.inputs.tag || github.ref }}
 
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: validate
+    needs: [validate-quality, validate-test]
     steps:
       - name: Checkout
         uses: actions/checkout@v7

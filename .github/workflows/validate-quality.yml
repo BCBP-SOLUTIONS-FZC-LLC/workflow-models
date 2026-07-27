@@ -1,5 +1,8 @@
-# Reusable validation workflow for workflow-models — called by ci.yml and release.yml.
-name: Validate
+# Reusable workflow — quality gate (fmt, tidy, vet, lint, vuln-check).
+# Called by ci.yml and release.yml. Job name must stay "quality" — combined
+# with the caller job's "Validate / Quality" name it produces the required
+# branch-protection check "Validate / Quality / quality".
+name: Validate Quality
 
 "on":
   workflow_call:
@@ -17,9 +20,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  validate:
-    name: Validate
+  quality:
+    name: quality
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -57,6 +61,3 @@ jobs:
 
       - name: Vulnerability check
         run: make vuln-check
-
-      - name: Test (race detector)
-        run: make test-ci
