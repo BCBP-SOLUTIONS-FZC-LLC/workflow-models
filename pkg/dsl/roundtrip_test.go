@@ -14,7 +14,8 @@ import (
 // from workflow-definition-service's real internal/core/domain/compiled_plan.go.
 func TestCompiledCollaboration_RoundTrip(t *testing.T) {
 	original := &dsl.CompiledCollaboration{
-		MainPlan: "Bid-No-Bid Review",
+		MainPlan:      "Bid-No-Bid Review",
+		SchemaVersion: dsl.CurrentSchemaVersion,
 		Plans: []*dsl.CompiledPlan{
 			{
 				Name:      "Bid-No-Bid Review",
