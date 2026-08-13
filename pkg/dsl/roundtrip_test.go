@@ -51,6 +51,17 @@ func TestCompiledCollaboration_RoundTrip(t *testing.T) {
 								Extras:          map[string]string{"message": "rfq"},
 								IsZeebeUserTask: true,
 							},
+							{
+								Type:          "connector",
+								Activity:      "Fetch tender packet",
+								NodeID:        "Activity_connector1",
+								Role:          "tender-business",
+								ConnectorType: "storage",
+								IOMapping: &dsl.IOMapping{
+									Inputs:  []dsl.IOVar{{Source: "=tenderId", Target: "key"}},
+									Outputs: []dsl.IOVar{{Source: "=contentRef", Target: "packet_ref"}},
+								},
+							},
 						},
 					},
 				},

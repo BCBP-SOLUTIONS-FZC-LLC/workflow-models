@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `CompiledCollaboration.SchemaVersion` — the DSL schema major version, stamped by the compiler at publish time. `dsl.CurrentSchemaVersion` is the value this module encodes.
+- `enums.StageTypeConnector` and `StageDef.ConnectorType`/`StageDef.IOMapping` — the connector-task DSL shape (`design/LLD/workflow_connectors.md` §3), reusing the existing `IOMapping`/`IOVar` shape rather than a new one.
 
 ## [1.0.0] - 2026-07-27
 

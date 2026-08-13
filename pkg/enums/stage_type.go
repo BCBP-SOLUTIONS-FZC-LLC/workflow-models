@@ -5,7 +5,7 @@ package enums
 // StageType values are the compiled-plan contract's stage-type discriminators
 // — Definition writes them into StageDef.Type, Execution reads them. An
 // unrecognized value is a valid forward-compat passthrough, not an exhaustive
-// set; these five are the ones the compiler's own StageTypeHandler registry
+// set; these six are the ones the compiler's own StageTypeHandler registry
 // and message-task handlers currently emit.
 type StageType string
 
@@ -17,6 +17,7 @@ const (
 	StageTypeApprove     StageType = "approve"
 	StageTypeSendTask    StageType = "send_task"
 	StageTypeReceiveTask StageType = "receive_task"
+	StageTypeConnector   StageType = "connector"
 )
 
 // EventTypeTemplatePublished is the wire event-type string for

@@ -14,6 +14,8 @@ type StageDef struct {
 	EngineNote       string            `json:"engine_note,omitempty"`
 	Extras           map[string]string `json:"extras,omitempty"`
 	IsZeebeUserTask  bool              `json:"is_zeebe_user_task,omitempty"`
+	ConnectorType    string            `json:"connector_type,omitempty"`
+	IOMapping        *IOMapping        `json:"io_mapping,omitempty"`
 }
 
 // BoundaryTimer is a timer-boundary-event attached to a StageDef.
