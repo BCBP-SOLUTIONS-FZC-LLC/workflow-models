@@ -175,7 +175,7 @@ CompiledCollaboration                 (root artifact)
 | `CompiledPlan` | `Name`, `TaskQueue string,omitempty`, `Ignored bool,omitempty`, `Departments []DepartmentDef`, `Execution ExecutionPlan`, `VisualElements []VisualElementDef,omitempty` |
 | `VisualElementDef` | `Kind`, `ID`, `Name,omitempty` |
 | `DepartmentDef` | `ID`, `Label`, `IAMDepartmentID string,omitempty`, `Ignore bool,omitempty`, `Props map[string]string,omitempty`, `Stages []StageDef` |
-| `StageDef` | `Type string` (holds `enums.StageType*` values), `Activity`, `NodeID,omitempty`, `Role`, `DefaultAssignees []string,omitempty`, `DueDate,omitempty`, `FollowUpDate,omitempty`, `BoundaryTimer *BoundaryTimer,omitempty`, `BoundaryMessage *MessagePath,omitempty`, `EngineNote,omitempty`, `Extras map[string]string,omitempty`, `IsZeebeUserTask bool,omitempty` |
+| `StageDef` | `Type string` (holds `enums.StageType*` values), `Activity`, `NodeID,omitempty`, `Role`, `DefaultAssignees []string,omitempty`, `DueDate,omitempty`, `FollowUpDate,omitempty`, `BoundaryTimer *BoundaryTimer,omitempty`, `BoundaryMessage *MessagePath,omitempty`, `EngineNote,omitempty`, `Extras map[string]string,omitempty`, `IsZeebeUserTask bool,omitempty`, `ConnectorType string,omitempty`, `IOMapping *IOMapping,omitempty` |
 | `BoundaryTimer` | `Duration`, `Interrupting bool`, `TargetDept,omitempty` |
 | `ExecutionPlan` | `Steps []ExecutionStep` |
 | `ExecutionStep` | `Sequential []string,omitempty`, `Parallel []ParallelBranch,omitempty`, `Exclusive []ExclusiveBranch,omitempty`, `SubWorkflow *SubWorkflowStep,omitempty`, `CallPool *CallPoolStep,omitempty`, `IOMapping *IOMapping,omitempty`, `Extras map[string]string,omitempty`, `MessagePaths []MessagePath,omitempty` |
@@ -212,6 +212,7 @@ CompiledCollaboration                 (root artifact)
 | `StageTypeApprove` | `"approve"` |
 | `StageTypeSendTask` | `"send_task"` |
 | `StageTypeReceiveTask` | `"receive_task"` |
+| `StageTypeConnector` | `"connector"` |
 | `EventTypeTemplatePublished` | `"workflow.template.published"` |
 
 An unrecognized `StageDef.Type` value is a valid forward-compat passthrough, not membership in a closed set — the compiler emits `UNKNOWN_STAGE_TYPE` as a warning, not an error, and compiles a passthrough `StageDef`.

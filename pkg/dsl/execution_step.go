@@ -28,15 +28,20 @@ type MessagePath struct {
 	TargetDept   string `json:"target_dept,omitempty"`
 }
 
-// IOMapping carries variable input/output declarations for a callActivity step.
-// The Execution Service uses this to pass variables when creating child workflows.
+// IOMapping carries variable input/output declarations. ExecutionStep uses it
+// for a callActivity step, where the Execution Service passes variables when
+// creating a child workflow; StageDef reuses the same shape for a
+// connector-typed stage, where there is no child workflow — Inputs are
+// instead resolved against the task's context at creation time and Outputs
+// against the connector's own result.
 type IOMapping struct {
 	Inputs  []IOVar `json:"inputs,omitempty"`
 	Outputs []IOVar `json:"outputs,omitempty"`
 }
 
-// IOVar maps one input or output variable between a caller and a called
-// sub-workflow or pool.
+// IOVar maps one input or output variable between a caller and whatever it
+// is calling — a sub-workflow/pool (ExecutionStep) or a connector
+// (StageDef).
 type IOVar struct {
 	Source string `json:"source"`
 	Target string `json:"target"`

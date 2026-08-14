@@ -64,7 +64,7 @@ Definition↔Execution boundary (design doc §3).
 
 ### `pkg/enums`
 
-Five `StageType` constants (`prep`/`review`/`approve`/`send_task`/`receive_task`)
+Six `StageType` constants (`prep`/`review`/`approve`/`send_task`/`receive_task`/`connector`)
 plus `EventTypeTemplatePublished`, the one shared wire-type string
 (design doc §4).
 
