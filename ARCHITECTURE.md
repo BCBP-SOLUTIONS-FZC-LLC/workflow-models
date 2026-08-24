@@ -4,8 +4,9 @@
 no adapters, and no runtime of its own. This document describes the shape
 of its three packages, how they relate to each other, and how the two
 consuming services (Definition and Execution) use them. For the full
-field-level design rationale, see the design doc:
-`design/LLD/workflow_models_lib.md` (BCBP-SOLUTIONS-FZC-LLC/design repo).
+field-level design rationale, see the design doc `workflow_models_lib.md`
+(also kept in-repo at `docs/lld/workflow_models_lib.md`, content-identical
+to the design repo's published copy).
 
 ## Produce/consume boundary
 
@@ -64,9 +65,11 @@ Definition↔Execution boundary (design doc §3).
 
 ### `pkg/enums`
 
-Six `StageType` constants (`prep`/`review`/`approve`/`send_task`/`receive_task`/`connector`)
-plus `EventTypeTemplatePublished`, the one shared wire-type string
-(design doc §4).
+Six `StageType` constants (`prep`/`review`/`approve`/`send_task`/`receive_task`/`connector`),
+`EventTypeTemplatePublished` (the one shared wire-type string), and
+`AllowedBPMNElements` — the shared Tier-1 BPMN element allowlist Definition
+Service's compiler enforces and its modeler-facing discovery endpoint serves
+(design doc §4, `definition_service.md` §4.1.2/§3.3.20).
 
 ## Testing model
 
