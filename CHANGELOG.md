@@ -5,6 +5,12 @@ All notable changes to `workflow-models` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `enums.AllowedBPMNElements` — the shared Tier-1 BPMN element allowlist (`design/LLD/definition_service.md` §4.1.2), read by Definition Service's compiler for enforcement and by its new `GET /bpmn/allowed-elements` discovery endpoint (§3.3.20) for the modeler UI's palette. Previously defined only as inline logic in Definition Service's own `bpmn_compiler` package with no shared representation.
+
 ## [1.2.0-rc.2] - 2026-08-14
 
 ### Added
