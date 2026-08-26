@@ -1,7 +1,6 @@
 package enums
 
 var AllowedBPMNElements = []string{
-	// Root structure
 	"definitions",
 	"collaboration",
 	"participant",
@@ -13,7 +12,6 @@ var AllowedBPMNElements = []string{
 	"message",
 	"dataStoreReference",
 
-	// Flow nodes
 	"task",
 	"startEvent",
 	"endEvent",
@@ -28,7 +26,6 @@ var AllowedBPMNElements = []string{
 	"subProcess",
 	"callActivity",
 
-	// Boundary / intermediate events
 	"boundaryEvent",
 	"intermediateCatchEvent",
 	"timerEventDefinition",
@@ -36,7 +33,6 @@ var AllowedBPMNElements = []string{
 	"messageEventDefinition",
 	"timeDuration",
 
-	// Connectivity & Zeebe extensions
 	"sequenceFlow",
 	"messageFlow",
 	"extensionElements",
