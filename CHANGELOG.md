@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `enums.AllowedBPMNElements` — the shared Tier-1 BPMN element allowlist (`design/LLD/definition_service.md` §4.1.2), read by Definition Service's compiler for enforcement and by its new `GET /bpmn/allowed-elements` discovery endpoint (§3.3.20) for the modeler UI's palette. Previously defined only as inline logic in Definition Service's own `bpmn_compiler` package with no shared representation.
+- `enums.AllowedBPMNElements` — the shared Tier-1 BPMN element allowlist (`design/LLD/definition_service.md` §4.1.2), read by Definition Service's compiler for enforcement and by its new `GET /bpmn/allowed-elements` discovery endpoint (§3.3.20) for the modeler UI's palette. Previously defined only as inline logic in Definition Service's own `bpmn_compiler` package with no shared representation. Audited against Definition Service's actual parser (`bpmncore`) before this list was wired as real enforcement there: added `task`, `dataStoreReference`, `timerEventDefinition`, `errorEventDefinition`, `messageEventDefinition`, `timeDuration`, `incoming`, `outgoing` — all already-supported elements the first pass of this list omitted, which would otherwise have started rejecting them the moment the compiler began enforcing this list.
 
 ## [1.2.0-rc.2] - 2026-08-14
 

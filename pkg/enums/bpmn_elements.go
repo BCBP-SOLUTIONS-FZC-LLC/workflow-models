@@ -11,8 +11,10 @@ var AllowedBPMNElements = []string{
 	"flowNodeRef",
 	"error",
 	"message",
+	"dataStoreReference",
 
 	// Flow nodes
+	"task",
 	"startEvent",
 	"endEvent",
 	"userTask",
@@ -29,10 +31,16 @@ var AllowedBPMNElements = []string{
 	// Boundary / intermediate events
 	"boundaryEvent",
 	"intermediateCatchEvent",
+	"timerEventDefinition",
+	"errorEventDefinition",
+	"messageEventDefinition",
+	"timeDuration",
 
 	// Connectivity & Zeebe extensions
 	"sequenceFlow",
 	"messageFlow",
 	"extensionElements",
 	"conditionExpression",
+	"incoming",
+	"outgoing",
 }
