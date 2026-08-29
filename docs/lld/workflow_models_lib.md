@@ -479,7 +479,7 @@ One row per §12 gap — Blocker (must exist before the `v1.0.0` tag) or Deferre
 | 3 | `.github/workflows/{ci,validate,release}.yml` | Blocker |
 | 4 | `VERSIONING.md` | Blocker — the public-vs-internal API scope table is exactly what Definition's migration (§8) needs to know before pinning a version |
 | 5 | `CHANGELOG.md` | Blocker — a `v1.0.0` tag with no changelog entry breaks the org's own SemVer/Keep-a-Changelog convention on day one |
-| 6 | `ARCHITECTURE.md` | Deferred — this LLD is the design-rationale document; a sibling-lib-format `ARCHITECTURE.md` restating the package reference is a nice-to-have, not a blocker for a 3-package, zero-dependency module |
+| 6 | `ARCHITECTURE.md` | Deferred — this LLD is the design-rationale document; a sibling-lib-format `ARCHITECTURE.md` restating the package reference is a nice-to-have, not a blocker for a 2-package, zero-dependency module |
 | 7 | `CONTRIBUTING.md` | Deferred |
 | 8 | `SECURITY.md` | Deferred |
 | 9 | `.github/` non-CI items (`CODEOWNERS`, PR template, `dependabot.yml`, issue templates) | Deferred |
