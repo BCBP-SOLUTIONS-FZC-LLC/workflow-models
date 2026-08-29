@@ -32,17 +32,16 @@ workflow-models/
 ├── .golangci.yml
 └── pkg/
     ├── dsl/      ← compiled-plan DSL types (CompiledCollaboration, CompiledPlan, StageDef, ExecutionStep, ...)
-    ├── events/   ← TemplatePublishedPayload
-    └── enums/    ← StageType constants + EventTypeTemplatePublished
+    └── enums/    ← StageType constants
 ```
 
 There is no `internal/`, no `cmd/`, and no separate `test/` directory — tests
 are co-located with the source they cover (`roundtrip_test.go` in each
-package, using the black-box `dsl_test`/`events_test` package names).
+package, using the black-box `dsl_test` package name).
 
 ## Adding a new type or field
 
-1. Add or modify the struct in `pkg/dsl` or `pkg/events`.
+1. Add or modify the struct in `pkg/dsl`.
 2. Update that package's `roundtrip_test.go` golden fixture to exercise the
    new field — this is the drift tripwire; a fixture that doesn't cover the
    new field won't catch a shape regression later.
@@ -58,7 +57,7 @@ package, using the black-box `dsl_test`/`events_test` package names).
 
 | Layer | Location | Notes |
 |---|---|---|
-| Round-trip (golden) | `pkg/dsl/roundtrip_test.go`, `pkg/events/roundtrip_test.go` | marshal → unmarshal → DeepEqual; the drift tripwire (design doc §9). This is the only test tier — no unit/integration/e2e split, since there's no I/O to integration-test. |
+| Round-trip (golden) | `pkg/dsl/roundtrip_test.go` | marshal → unmarshal → DeepEqual; the drift tripwire (design doc §9). This is the only test tier — no unit/integration/e2e split, since there's no I/O to integration-test. |
 
 ## Before opening a PR
 

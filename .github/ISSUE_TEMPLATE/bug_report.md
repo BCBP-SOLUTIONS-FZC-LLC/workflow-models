@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a defect in workflow-models (pkg/dsl, pkg/events, pkg/enums)
+about: Report a defect in workflow-models (pkg/dsl, pkg/enums)
 title: '[BUG] '
 labels: bug
 assignees: ''

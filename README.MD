@@ -5,8 +5,7 @@ Shared Go module between Definition Service and Execution Service; every type cr
 ## Scope
 
 - `pkg/dsl` — the compiled-plan DSL. Definition's BPMN compiler produces every field; Execution's workflow function consumes every field — the full contract, not a curated subset.
-- `pkg/events` — exactly one struct, `TemplatePublishedPayload` (`workflow.template.published`), the only event payload that crosses this boundary.
-- `pkg/enums` — `StageDef.Type` discriminator values plus the one shared event's wire-type constant.
+- `pkg/enums` — `StageDef.Type` discriminator values.
 
 A type only one side reads or writes stays in that service's own domain package, not here.
 
@@ -19,9 +18,7 @@ A type only one side reads or writes stays in that service's own domain package,
   - [Scope boundary](#scope-boundary)
   - [Adding to a consumer service](#adding-to-a-consumer-service)
   - [Quick start — pkg/dsl](#quick-start--pkgdsl)
-  - [Quick start — pkg/events](#quick-start--pkgevents)
   - [Package reference — pkg/dsl](#package-reference--pkgdsl)
-  - [Package reference — pkg/events](#package-reference--pkgevents)
   - [Package reference — pkg/enums](#package-reference--pkgenums)
   - [Key invariants](#key-invariants)
   - [Testing model](#testing-model)
@@ -30,18 +27,17 @@ A type only one side reads or writes stays in that service's own domain package,
 
 ## Package dependency graph
 
-None of the three packages imports another:
+Neither package imports the other:
 
 ```mermaid
 graph LR
     dsl(["pkg/dsl"])
-    events(["pkg/events"])
     enums(["pkg/enums"])
 ```
 
 ## Scope boundary
 
-- `internal/core/domain/compiled_plan.go` and `eventpayloads.go` in `workflow-definition-service` define the same types as `pkg/dsl`/`pkg/events` (`CompiledCollaboration`, `CompiledPlan`, `DepartmentDef`, `StageDef`, `ExecutionPlan`/`ExecutionStep` and its branch/step variants, `MessageDef`, `TemplatePublishedPayload`, `EventTypeTemplatePublished`) — see [VERSIONING.md](./VERSIONING.md) and the design doc (§8) for the type-alias consolidation this module is the target of.
+- `internal/core/domain/compiled_plan.go` in `workflow-definition-service` defines the same types as `pkg/dsl` (`CompiledCollaboration`, `CompiledPlan`, `DepartmentDef`, `StageDef`, `ExecutionPlan`/`ExecutionStep` and its branch/step variants, `MessageDef`) — see [VERSIONING.md](./VERSIONING.md) and the design doc (§8) for the type-alias consolidation this module is the target of.
 - Execution's 18 outbound events (`workflow.instance.*`, `workflow.task.*` — e.g. `workflow.instance.paused`, `workflow.task.reassigned`, `workflow.task.sla-breached`) belong to Execution's own domain package; consumers are Audit, Notification, Tender, LLM, and the Dashboard Stream Gateway, not Definition.
 - The 5 IAM-owned inbound events Execution decodes — `DelegationStarted`, `DelegationEnded`, `TenantStateChanged`, `UserDeleted`, `UserAvailabilityChanged` — and their enum values (`initiator`, tenant `status`, delegation `scope`/`ended_reason`, force-route `direction`) live in Execution's own domain package.
 - `platform-events`' `Envelope[T]` is not re-exported here — both services import `platform-events` directly for it.
@@ -106,40 +102,6 @@ err = json.Unmarshal(b, &decoded)
 
 `StageDef.Type` is a plain `string` field, not `enums.StageType` — populate it with an `enums.StageType*` constant's value (`enums.StageTypeReceiveTask`) or the equivalent raw string.
 
-## Quick start — pkg/events
-
-Fresh publish (no promotion):
-
-```go
-import "github.com/BCBP-SOLUTIONS-FZC-LLC/workflow-models/pkg/events"
-
-payload := events.TemplatePublishedPayload{
-    WorkflowID:    "018e1f2a-0000-7000-8000-000000000001",
-    WorkflowKey:   "bid-no-bid-review",
-    VersionID:     "018e1f2a-0000-7000-8000-000000000002",
-    VersionNumber: 1,
-    ArtifactHash:  "sha256:deadbeef",
-    PublishedBy:   "018e1f2a-0000-7000-8000-000000000003",
-}
-```
-
-Promotion of an existing version — `PromotedFromVersionID` set:
-
-```go
-promotedFrom := "018e1f2a-0000-7000-8000-000000000009"
-payload := events.TemplatePublishedPayload{
-    WorkflowID:            "018e1f2a-0000-7000-8000-000000000001",
-    WorkflowKey:           "bid-no-bid-review",
-    VersionID:             "018e1f2a-0000-7000-8000-000000000002",
-    VersionNumber:         3,
-    ArtifactHash:          "sha256:deadbeef",
-    PublishedBy:           "018e1f2a-0000-7000-8000-000000000003",
-    PromotedFromVersionID: &promotedFrom,
-}
-```
-
-`PromotedFromVersionID` is `omitempty` — a nil pointer is simply absent from the marshaled JSON.
-
 ## Package reference — pkg/dsl
 
 ```text
@@ -189,20 +151,6 @@ CompiledCollaboration                 (root artifact)
 | `TimerPath` | `Duration`, `Interrupting bool`, `TargetDept,omitempty` |
 | `CallPoolStep` | `Pool` |
 
-## Package reference — pkg/events
-
-| Field | Type | JSON tag |
-| --- | --- | --- |
-| `WorkflowID` | `string` | `workflow_id` |
-| `WorkflowKey` | `string` | `workflow_key` |
-| `VersionID` | `string` | `version_id` |
-| `VersionNumber` | `int32` | `version_number` |
-| `ArtifactHash` | `string` | `artifact_hash` |
-| `PublishedBy` | `string` | `published_by` |
-| `PromotedFromVersionID` | `*string` | `promoted_from_version_id,omitempty` |
-
-`pkg/events` holds exactly this one struct. Execution's 18 outbound event payloads are consumed by Audit, Notification, Tender, LLM, and the Dashboard Stream Gateway — never by Definition — so they stay in Execution's own domain package rather than here.
-
 ## Package reference — pkg/enums
 
 | Constant | Value |
@@ -213,7 +161,6 @@ CompiledCollaboration                 (root artifact)
 | `StageTypeSendTask` | `"send_task"` |
 | `StageTypeReceiveTask` | `"receive_task"` |
 | `StageTypeConnector` | `"connector"` |
-| `EventTypeTemplatePublished` | `"workflow.template.published"` |
 
 An unrecognized `StageDef.Type` value is a valid forward-compat passthrough, not membership in a closed set — the compiler emits `UNKNOWN_STAGE_TYPE` as a warning, not an error, and compiles a passthrough `StageDef`.
 
@@ -227,7 +174,7 @@ An unrecognized `StageDef.Type` value is a valid forward-compat passthrough, not
 
 ## Testing model
 
-Each package with executable content (`pkg/dsl`, `pkg/events`) has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual` against the original — the drift tripwire. `pkg/dsl`, `pkg/enums`, and `pkg/events` are pure struct/const declarations with zero executable statements, so `go test -cover` reports 0% and no numeric coverage gate is wired into CI for this package.
+`pkg/dsl` has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual` against the original — the drift tripwire. `pkg/dsl` and `pkg/enums` are pure struct/const declarations with zero executable statements, so `go test -cover` reports 0% and no numeric coverage gate is wired into CI for this package.
 
 ## Versioning and releases
 
@@ -235,7 +182,7 @@ See [VERSIONING.md](./VERSIONING.md) for the full release process. Summary:
 
 | Version bump | When |
 | --- | --- |
-| **MAJOR** | Breaking/renamed exported field in `pkg/dsl`, `pkg/events`, or `pkg/enums`; a wire-format (JSON tag) change |
+| **MAJOR** | Breaking/renamed exported field in `pkg/dsl` or `pkg/enums`; a wire-format (JSON tag) change |
 | **MINOR** | New backward-compatible field, `StageType`, or event-type constant |
 | **PATCH** | Doc-only correction, internal test fixture update |
 

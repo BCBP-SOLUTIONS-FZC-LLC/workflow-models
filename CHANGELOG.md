@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- `pkg/events` (`TemplatePublishedPayload`) and `enums.EventTypeTemplatePublished` — the `workflow.template.published` event is retired; its only real behavior (Execution's compiled-plan cache prewarm) was already dead code, leaving nothing but payload validation and dedup-recording. Definition Service no longer publishes it, and Execution Service no longer consumes it.
+
 ### Added
 
 - `enums.AllowedBPMNElements` — the shared Tier-1 BPMN element allowlist (`design/LLD/definition_service.md` §4.1.2), read by Definition Service's compiler for enforcement and by its new `GET /bpmn/allowed-elements` discovery endpoint (§3.3.20) for the modeler UI's palette. Previously defined only as inline logic in Definition Service's own `bpmn_compiler` package with no shared representation. Audited against Definition Service's actual parser (`bpmncore`) before this list was wired as real enforcement there: added `task`, `dataStoreReference`, `timerEventDefinition`, `errorEventDefinition`, `messageEventDefinition`, `timeDuration`, `incoming`, `outgoing` — all already-supported elements the first pass of this list omitted, which would otherwise have started rejecting them the moment the compiler began enforcing this list.

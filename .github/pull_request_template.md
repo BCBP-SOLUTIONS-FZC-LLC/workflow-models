@@ -36,7 +36,7 @@ Provide a clear description of the changes.
 ### Documentation
 - [ ] README updated (if public API changed)
 - [ ] `CHANGELOG.md` `[Unreleased]` section updated
-- [ ] `VERSIONING.md` impact assessed if `pkg/dsl`, `pkg/events`, or `pkg/enums` changed
+- [ ] `VERSIONING.md` impact assessed if `pkg/dsl` or `pkg/enums` changed
 
 ---
 

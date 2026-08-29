@@ -2,7 +2,7 @@
 
 `workflow-models` is a shared Go module, not a service — it has no layers,
 no adapters, and no runtime of its own. This document describes the shape
-of its three packages, how they relate to each other, and how the two
+of its two packages, how they relate to each other, and how the two
 consuming services (Definition and Execution) use them. For the full
 field-level design rationale, see the design doc `workflow_models_lib.md`
 (also kept in-repo at `docs/lld/workflow_models_lib.md`, content-identical
@@ -14,11 +14,10 @@ Unlike a layered service, this module's "architecture" is a producer/consumer
 relationship across a service boundary, not a dependency direction within
 one codebase:
 
-- **workflow-definition-service** *produces* every field in `pkg/dsl` (via
-  its BPMN compiler) and every payload in `pkg/events`.
-- **The Execution Service** *consumes* both, entirely — it drives its
-  workflow function off `pkg/dsl` and refreshes its compiled-plan cache off
-  `pkg/events.TemplatePublishedPayload`.
+- **workflow-definition-service** *produces* every field in `pkg/dsl` via
+  its BPMN compiler.
+- **The Execution Service** *consumes* it entirely — it drives its workflow
+  function off `pkg/dsl`.
 
 The module holds only what both sides actually need — a type only one
 service reads or writes stays in that service's own domain package, not
@@ -26,16 +25,15 @@ here (design doc §5).
 
 ## Package dependency graph
 
-Verified by inspection: none of the three packages imports another.
+Verified by inspection: neither package imports the other.
 
 ```mermaid
 graph LR
     dsl(["pkg/dsl"])
-    events(["pkg/events"])
     enums(["pkg/enums"])
 ```
 
-Three disconnected nodes, zero edges — by design. Nothing in this module
+Two disconnected nodes, zero edges — by design. Nothing in this module
 depends on anything else in this module.
 
 ## Public API packages
@@ -57,32 +55,25 @@ full field-by-field reference.
 | `ParallelBranch`, `ExclusiveBranch`, `SubWorkflowStep`, `CallPoolStep` | `ExecutionStep` variants |
 | `IOMapping`, `IOVar`, `MessagePath`, `ErrorPath`, `TimerPath` | Supporting types for boundary events and variable mapping |
 
-### `pkg/events`
-
-Exactly one struct: `TemplatePublishedPayload` — the payload of
-`workflow.template.published`, the only event that crosses the
-Definition↔Execution boundary (design doc §3).
-
 ### `pkg/enums`
 
-Six `StageType` constants (`prep`/`review`/`approve`/`send_task`/`receive_task`/`connector`),
-`EventTypeTemplatePublished` (the one shared wire-type string), and
-`AllowedBPMNElements` — the shared Tier-1 BPMN element allowlist Definition
+Six `StageType` constants (`prep`/`review`/`approve`/`send_task`/`receive_task`/`connector`)
+and `AllowedBPMNElements` — the shared Tier-1 BPMN element allowlist Definition
 Service's compiler enforces and its modeler-facing discovery endpoint serves
 (design doc §4, `definition_service.md` §4.1.2/§3.3.20).
 
 ## Testing model
 
-Each package with executable content (`pkg/dsl`, `pkg/events`) has a
-`roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual`
-against the original. This is the drift tripwire — it fails the moment a
-struct or JSON tag changes shape without the fixture being updated
-(design doc §9). `pkg/enums` has no test file; it holds only constants.
+`pkg/dsl` has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal →
+`reflect.DeepEqual` against the original. This is the drift tripwire — it
+fails the moment a struct or JSON tag changes shape without the fixture
+being updated (design doc §9). `pkg/enums` has no test file; it holds only
+constants.
 
 ## Coverage note
 
-`pkg/dsl`, `pkg/enums`, and `pkg/events` are pure struct/const declarations
-today — zero executable statements. `go test -cover` correctly reports
+`pkg/dsl` and `pkg/enums` are pure struct/const declarations today — zero
+executable statements. `go test -cover` correctly reports
 "no statements" / 0.0%. No numeric coverage gate is wired into CI for this
 reason (see `Makefile`'s `cover-func` target and `.github/workflows/ci.yml`) —
 a gate would fail permanently regardless of test quality. Revisit once real

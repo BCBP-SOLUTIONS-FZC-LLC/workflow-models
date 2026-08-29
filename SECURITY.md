@@ -55,8 +55,8 @@ In scope for vulnerability reports:
 
 - Supply-chain vulnerabilities in this module's own dev-tooling dependencies
   (`go.sum`, surfaced via `make vuln-check`).
-- Any code path in `pkg/dsl`, `pkg/events`, or `pkg/enums` that is not pure
-  data (none exist today — flag if one is ever introduced).
+- Any code path in `pkg/dsl` or `pkg/enums` that is not pure data (none
+  exist today — flag if one is ever introduced).
 
 Out of scope: vulnerabilities in `workflow-definition-service`'s or the
 future execution service's own decode/validation logic — that's each

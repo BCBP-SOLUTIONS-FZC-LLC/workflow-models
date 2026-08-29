@@ -1,5 +1,5 @@
 // Package enums holds the shared wire-level discriminator constants used by
-// pkg/dsl and pkg/events.
+// pkg/dsl.
 package enums
 
 // StageType values are the compiled-plan contract's stage-type discriminators
@@ -19,8 +19,3 @@ const (
 	StageTypeReceiveTask StageType = "receive_task"
 	StageTypeConnector   StageType = "connector"
 )
-
-// EventTypeTemplatePublished is the wire event-type string for
-// TemplatePublishedPayload, shared between Definition (producer) and
-// Execution (consumer).
-const EventTypeTemplatePublished = "workflow.template.published"

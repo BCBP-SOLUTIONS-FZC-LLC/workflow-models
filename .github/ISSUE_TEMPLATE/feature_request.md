@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Propose a new type/field for pkg/dsl, pkg/events, or pkg/enums
+about: Propose a new type/field for pkg/dsl or pkg/enums
 title: '[FEAT] '
 labels: enhancement
 assignees: ''

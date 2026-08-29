@@ -10,7 +10,7 @@ We use [SemVer 2.0.0](https://semver.org/): `MAJOR.MINOR.PATCH` (e.g. `v1.0.0`).
 
 | Bump | When you change | Examples |
 |------|-----------------|----------|
-| **MAJOR** | Breaking change in the public API (`pkg/dsl`, `pkg/events`, `pkg/enums`) | Removed/renamed exported field, incompatible struct-shape change, removed a `StageType`/event-type constant |
+| **MAJOR** | Breaking change in the public API (`pkg/dsl`, `pkg/enums`) | Removed/renamed exported field, incompatible struct-shape change, removed a `StageType` constant |
 | **MINOR** | New backward-compatible capability | New optional field (`omitempty`), new `StageType` constant, new struct |
 | **PATCH** | Backward-compatible fix | Doc-only correction, internal test fixture update |
 
@@ -18,8 +18,7 @@ We use [SemVer 2.0.0](https://semver.org/): `MAJOR.MINOR.PATCH` (e.g. `v1.0.0`).
 
 | In scope (SemVer applies) | Out of scope |
 |---------------------------|---------------|
-| `pkg/dsl/*` — every exported type and field | Test-only helpers/fixtures (`roundtrip_test.go`, the `dsl_test`/`events_test` packages) |
-| `pkg/events/*` — every exported type and field | |
+| `pkg/dsl/*` — every exported type and field | Test-only helpers/fixtures (`roundtrip_test.go`, the `dsl_test` package) |
 | `pkg/enums/*` — every exported constant | |
 
 Unlike the sibling libraries (`platform-events`, `platform-pgcommon`,
@@ -34,7 +33,7 @@ exported symbol under `pkg/` is public API (see [ARCHITECTURE.md](./ARCHITECTURE
 
 ### Wire format guarantee
 
-Every `pkg/dsl` and `pkg/events` struct is JSON-tagged and covered by a
+Every `pkg/dsl` struct is JSON-tagged and covered by a
 golden round-trip test (`roundtrip_test.go` in each package). A field whose
 `json:"..."` tag changes name, or that stops round-tripping through
 `json.Marshal`/`json.Unmarshal`, is a **MAJOR** bump even if the Go field
