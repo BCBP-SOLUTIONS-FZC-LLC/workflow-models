@@ -2,7 +2,7 @@
 
 # Workflow Models Shared Library — Low-Level Design
 
-`workflow-models` (`github.com/BCBP-SOLUTIONS-FZC-LLC/workflow-models`) is the shared Go module carrying every type that crosses the boundary between Definition Service and Execution Service: the compiled-plan DSL, the one event payload both sides touch, and the enum/constant discriminators both sides need. This document specifies the module's contents field-by-field, how Definition's compiler populates each field, and how Execution's design consumes/dispatches on it — the full usage detail on both sides of the boundary, not just what the module contains.
+`workflow-models` (`github.com/BCBP-SOLUTIONS-FZC-LLC/workflow-models`) is the shared Go module carrying every type that crosses the boundary between Definition Service and Execution Service: the compiled-plan DSL and the enum/constant discriminators both sides need. This document specifies the module's contents field-by-field, how Definition's compiler populates each field, and how Execution's design consumes/dispatches on it — the full usage detail on both sides of the boundary, not just what the module contains.
 
 ---
 

@@ -1,5 +1,14 @@
 package enums
 
+// AllowedBPMNElements is the Tier-1 allowlist of BPMN XML element names
+// Definition Service's compiler enforces; the modeler-facing
+// GET /bpmn/allowed-elements endpoint serves the same list to drive the
+// authoring UI's palette (design/LLD/definition_service.md §4.1.2/§3.3.20).
+// An element name absent from this list is rejected by the compiler, not
+// silently passed through. The blank lines below group entries by role
+// (collaboration/process structure, task/gateway/event types, boundary and
+// intermediate event definitions, flow/expression wiring) for readability
+// only — membership, not position, is what's enforced.
 var AllowedBPMNElements = []string{
 	"definitions",
 	"collaboration",
