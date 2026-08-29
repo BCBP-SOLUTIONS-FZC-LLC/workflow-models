@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0-rc.4] - 2026-08-29
+
 ### Removed
 
 - `pkg/events` (`TemplatePublishedPayload`) and `enums.EventTypeTemplatePublished` — the `workflow.template.published` event is retired; its only real behavior (Execution's compiled-plan cache prewarm) was already dead code, leaving nothing but payload validation and dedup-recording. Definition Service no longer publishes it, and Execution Service no longer consumes it.

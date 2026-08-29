@@ -15,7 +15,7 @@
    - 2.3 `StageDef` / `BoundaryTimer`
    - 2.4 `ExecutionPlan` / `ExecutionStep`
    - 2.5 Branch & Step Variants
-3. Package Reference: `pkg/events`
+3. Package Reference: `pkg/events` (Retired)
 4. Package Reference: `pkg/enums`
 5. Scope Boundary: What's Not In This Module
 6. Versioning
@@ -38,18 +38,18 @@
 
 ## 1. Overview & Status
 
-Go 1.26, zero external dependencies. Three packages: `pkg/dsl`, `pkg/events`, `pkg/enums`. It exists to close two structural drift sources that are otherwise kept in sync by discipline, not by the compiler:
+Go 1.26, zero external dependencies. Two packages: `pkg/dsl`, `pkg/enums`. It exists to close two structural drift sources that are otherwise kept in sync by discipline, not by the compiler — one of them dormant since `pkg/events` was retired (rev 2.4; §3):
 
 1. **The compiled-plan DSL travels as an opaque JSON string.** `DefinitionService.GetCompiledWorkflow` returns `compiled_plan_json` as a plain `string`, not a typed message. Nothing stops Definition's compiler from adding a BPMN element handler, an `ExecutionStep` variant, or a struct field without Execution ever finding out until an instance fails at runtime. Two drift bugs already exist in the codebase from this class of problem: `eventBasedGateway` silently dropped by XML parsing, and `inclusiveGateway` inconsistently handled across code and documentation.
-2. **Event payload structs are hand-mirrored against each service's own AsyncAPI spec.** Definition's `internal/core/domain/eventpayloads.go` `TemplatePublishedPayload` must match `WorkflowTemplatePublishedPayload` in its own `api/asyncapi.yaml` by discipline alone; Execution does the same for its 18 outbound payloads. `workflow.template.published` is the sharp case — Definition produces it, Execution consumes it for cache pre-warm (`execution_service.md` §6.2) — so two independently hand-maintained copies of the same contract sit on either side of the event bus with no compiler check between them.
+2. **Event payload structs are hand-mirrored against each service's own AsyncAPI spec.** Execution does this today for its 18 outbound payloads, each hand-matched against its own `api/asyncapi.yaml` by discipline alone with no compiler check between a struct and its governing schema. `workflow.template.published` was the sharp case that originally justified this module holding a shared struct at all: Definition's `internal/core/domain/eventpayloads.go` `TemplatePublishedPayload` had to match `WorkflowTemplatePublishedPayload` in its own `api/asyncapi.yaml`, Definition produced the event, and Execution consumed it for cache pre-warm (`execution_service.md` §6.2) — two independently hand-maintained copies of the same contract sitting on either side of the event bus with no compiler check between them. That event is retired platform-wide (rev 2.4; §3) — its only real consumer-side behavior had already gone dead before the retirement — and no event currently crosses the Definition↔Execution boundary, so this drift source is dormant, not closed: the same risk recurs unchanged the moment some future event needs to cross this boundary.
 
 Both failure classes are the same shape: a second source of truth kept in sync by discipline. Publishing the real Go structs as an importable module turns a silent runtime surprise into a compile-time error the moment a consumer bumps the dependency.
 
-**Status.** Pre-release, tagged for integration testing. `pkg/dsl`/`pkg/enums`/`pkg/events` exist with golden round-trip tests; `v0.1.0-beta.1` is tagged and consumed by `workflow-definition-service`, which has migrated its own compiled-plan and event-payload types to reference the module directly (§8) — the real `v1.0.0` tag is still pending. Execution Service imports this module directly from day one, with no interim hand-rolled mirror ever written to retire.
+**Status.** Pre-release, tagged for integration testing. `pkg/dsl`/`pkg/enums` exist with golden round-trip tests; `v0.1.0-beta.1` is tagged and consumed by `workflow-definition-service`, which has migrated its own compiled-plan and event-payload types to reference the module directly (§8) — the real `v1.0.0` tag is still pending. Execution Service imports this module directly from day one, with no interim hand-rolled mirror ever written to retire.
 
 **Relationship to the gRPC/proto contract.** `DefinitionService.GetCompiledWorkflow`/`ExecutionService.CheckActiveInstances`/`PauseUserTasks` (`api/proto/definition/v1/definition.proto`, `execution/v1/execution_service.proto`) are a separate, already-solved sharing mechanism — `buf`-generated stubs already give both services one structurally-shared contract for that RPC layer. This module doesn't wrap or duplicate it; see `definition_service.md` §3.4 / `execution_service.md` §5.3 for that contract.
 
-**Wire vs. in-process authority.** For the one shared event, two artifacts must agree: the JSON Schema registered in AWS Glue (the wire contract, governed by `platform-schemagov`, driven off each service's own `api/asyncapi.yaml`) and the Go struct in this module (the in-process contract). The schema stays the cross-language wire authority; the struct is the Go-side compile authority; §9's golden round-trip test is the tripwire that fails CI if they diverge. For the compiled-plan DSL there is no separate wire authority — the wire is an opaque JSON string — so the module's struct is the only authority that exists.
+**Wire vs. in-process authority.** When the module holds an event, two artifacts must agree: the JSON Schema registered in AWS Glue (the wire contract, governed by `platform-schemagov`, driven off each service's own `api/asyncapi.yaml`) and the Go struct in this module (the in-process contract). The schema stays the cross-language wire authority; the struct is the Go-side compile authority; a golden round-trip test is the tripwire that fails CI if they diverge. No event lives in the module today — `pkg/events` was retired (rev 2.4; §3), taking its golden round-trip test (§9) with it — so this split is dormant rather than active; it governed `workflow.template.published` while that event existed and would govern whatever event is added next. For the compiled-plan DSL there is no separate wire authority — the wire is an opaque JSON string — so the module's struct is the only authority that exists.
 
 ---
 
@@ -260,31 +260,17 @@ Execution: the instance-wide, node-keyed message-correlation buffer (§2.1 above
 
 ---
 
-## 3. Package Reference: `pkg/events`
+## 3. Package Reference: `pkg/events` (Retired)
 
-Exactly one struct: `TemplatePublishedPayload` — the only event payload that actually crosses the Definition↔Execution boundary.
+Retired 2026-08-29 (rev 2.4). This package held exactly one struct, `TemplatePublishedPayload`, backing `workflow.template.published` — the only event payload that ever crossed the Definition↔Execution boundary (§1). The event is retired platform-wide in the same change: removed from Definition Service (the producer), Execution Service (the consumer), and the `event_consumer` service (the router), together with `enums.EventTypeTemplatePublished` (§4.2). Execution's only real runtime behavior on receipt — a compiled-plan cache pre-warm (`execution_service.md` §6.2) — was already dead code before this removal; what remained was payload validation and dedup-recording with no consumer behind either, not enough to justify keeping the event on its own. See `CHANGELOG.md`'s `[Unreleased]` § Removed entry and the Revision history's rev 2.4 row for the full record.
 
-| Field | Type | JSON tag | Purpose |
-| --- | --- | --- | --- |
-| `WorkflowID` | `string` | `workflow_id` | The published workflow's ID. |
-| `WorkflowKey` | `string` | `workflow_key` | Tenant-scoped human key. |
-| `VersionID` | `string` | `version_id` | The specific version published. |
-| `VersionNumber` | `int32` | `version_number` | That version's ordinal. |
-| `ArtifactHash` | `string` | `artifact_hash` | Content hash of the compiled artifact. |
-| `PublishedBy` | `string` | `published_by` | Acting user's IAM UUID. |
-| `PromotedFromVersionID` | `*string` | `promoted_from_version_id,omitempty` | Set only when this publish is a promotion of an existing version, never a fresh compile. |
-
-**Definition populates and produces it** at the publish transaction (`definition_service.md` §7.2, Event Payload Schemas; §5, Publish Transaction Flow) — Definition's real, currently-live struct is `internal/core/domain/eventpayloads.go`'s `TemplatePublishedPayload`, byte-identical to this module's copy, mirroring its own governed AsyncAPI `WorkflowTemplatePublishedPayload` schema 1:1.
-
-**Execution consumes it** for compiled-plan cache pre-warm (`execution_service.md` §6.2, Inbound Event Catalogue) — a fetch of the compiled plan via `GetCompiledWorkflow`, refreshing the `workflow_key → active version_id` map in the shared Valkey cache, recency-guarded against out-of-order redelivery, fail-open on fetch failure since the plan loads lazily on the next instantiation regardless.
-
-**Why exactly one struct.** Execution's 18 outbound event payloads (`workflow.instance.*`/`workflow.task.*`) are consumed by Audit/Notification/Tender/LLM/Dashboard — never by Definition — and stay in Execution's own domain package, the same way Definition's own event structs already live in `eventpayloads.go` rather than here. `platform-events`' generic `Envelope[T]` is deliberately not re-exported — both services already import `platform-events` directly for it, and a re-export buys neither service anything neither can already reach (§5).
+This section number is kept as a retired stub rather than renumbered away, so every other section's `§3`/`§4`/etc. cross-reference in this document stays valid. The field-by-field table this section once carried for `TemplatePublishedPayload` is preserved in this file's git history (rev 2.2 and earlier).
 
 ---
 
 ## 4. Package Reference: `pkg/enums`
 
-Shrinks to exactly what `pkg/dsl` and the one shared event need — five `StageType` string constants and one event-type constant, nothing else.
+Shrinks to exactly what `pkg/dsl` needs — five `StageType` string constants, nothing else; the event-type constant this package once also held is retired (§4.2).
 
 ### 4.1 `StageType`
 
@@ -301,11 +287,11 @@ An unrecognized `StageDef.Type` value is a valid forward-compat passthrough, not
 
 `ExecutionStep`'s variants have no wire discriminator string to constantize here — as §2.4 states, "which variant" is just "which field is non-nil," already expressed in Go's type system.
 
-### 4.2 `EventTypeTemplatePublished`
+### 4.2 `EventTypeTemplatePublished` (Retired)
 
-`EventTypeTemplatePublished = "workflow.template.published"` — the one shared wire-type constant. Definition remains the sole owner/registrar of this schema in AWS Glue; Execution's own `asyncapi.yaml` documents it only as a `receive` operation for completeness, payload schema owned upstream, never re-registered.
+`EventTypeTemplatePublished = "workflow.template.published"` was the one shared wire-type constant this package held — removed 2026-08-29 (rev 2.4) together with `pkg/events` (§3) when the `workflow.template.published` event was retired platform-wide: Definition Service stopped publishing it, Execution Service stopped consuming it, and the `event_consumer` service stopped routing it, all in the same change. Definition had been the sole owner/registrar of this schema in AWS Glue; Execution's own `asyncapi.yaml` had documented it only as a `receive` operation for completeness, payload schema owned upstream, never re-registered.
 
-Removed from this package during scope correction (Execution-only, moved to Execution's own enum constants, §5): the 18 outbound wire-type strings, and the payload enums `initiator`/tenant `status`/delegation `scope`/`ended_reason`/force-route `direction` — Definition never references any of these.
+Removed from this package during an earlier, unrelated scope correction (Execution-only, moved to Execution's own enum constants, §5): the 18 outbound wire-type strings, and the payload enums `initiator`/tenant `status`/delegation `scope`/`ended_reason`/force-route `direction` — Definition never references any of these.
 
 ---
 
@@ -319,9 +305,9 @@ The module holds only what both Definition Service and Execution Service actuall
 
 **Their enum values** — `initiator` (`admin`/`tenant_state`/`safety_net`/`ooo`/`degraded_recovery`/`override`/`delegation`), tenant `status`, delegation `scope`/`ended_reason`, force-route `direction` — live in Execution's own domain package for the same reason.
 
-**`platform-events`' `Envelope[T]`** is not re-exported (§3) — a convenience neither service requires from this module.
+**`platform-events`' `Envelope[T]`** is not re-exported (Appendix A #7) — a convenience neither service requires from this module.
 
-Why this matters as its own boundary, not an implementation detail: a module that quietly grows to hold "everything Execution happens to touch" stops being a compile-time-shared contract and becomes an unversioned dumping ground neither service can safely evolve independently. The one-struct/five-constant footprint above is deliberate, re-derived once already (rev 1.0 → rev 1.1's scope correction, see Revision history) — not an oversight to be quietly grown back.
+Why this matters as its own boundary, not an implementation detail: a module that quietly grows to hold "everything Execution happens to touch" stops being a compile-time-shared contract and becomes an unversioned dumping ground neither service can safely evolve independently. The module's footprint is deliberate, re-derived twice already: rev 1.0 → rev 1.1's scope correction narrowed it to one struct and one constant family, and rev 2.3 → rev 2.4 narrowed it again to `StageType` constants alone once that one struct's backing event was retired (see Revision history) — not an oversight to be quietly grown back.
 
 ---
 
@@ -337,7 +323,7 @@ Not yet built. Planned:
 
 ### 6.2 Event Versioning
 
-Follows the AsyncAPI `.v2` rule already governing both services' specs: an additive payload change is a new Glue schema version, same wire `type`, and a same-shaped additive Go struct field (module minor version bump); a breaking change bumps `type` to `<name>.v2`, adds a new payload struct alongside the old (kept until retirement), and dual-publishes for one release cycle — Execution's own outbound catalogue settled this window at 30 days (`execution_service.md` §6.8); this module's own event hasn't needed one yet (Appendix B). Consumers pin a module version; forward-compatibility (open schemas, `additionalProperties: true`) means a not-yet-upgraded consumer tolerates an additive producer change at runtime even before it bumps the module.
+Follows the AsyncAPI `.v2` rule already governing both services' specs: an additive payload change is a new Glue schema version, same wire `type`, and a same-shaped additive Go struct field (module minor version bump); a breaking change bumps `type` to `<name>.v2`, adds a new payload struct alongside the old (kept until retirement), and dual-publishes for one release cycle — Execution's own outbound catalogue settled this window at 30 days (`execution_service.md` §6.8). No event currently lives in this module — `pkg/events` was retired at rev 2.4 (§3) before this rule was ever exercised — so the rule is dormant, retained as the policy that would govern were an event added back to the module. Consumers pin a module version; forward-compatibility (open schemas, `additionalProperties: true`) means a not-yet-upgraded consumer tolerates an additive producer change at runtime even before it bumps the module.
 
 ---
 
@@ -373,9 +359,11 @@ A mechanical procedure — no behavior change, only where types are defined. Def
 6. Run the full test suite unchanged (`make test`, `make arch-lint`, `make build`) — this is a pure mechanical rename with no behavior change, so no test assertion should need updating; a failure here indicates the module's struct isn't actually field-for-field identical to what it replaced, not a bug in the test. `.go-arch-lint.yml` needs no edit — `depOnAnyVendor: true` already leaves vendored-module imports unrestricted regardless of which internal component does the importing.
 7. Add the golden round-trip tests (§9) as new files; wire into CI alongside the existing `make test` target.
 
+Steps 3–4's `TemplatePublishedPayload`/`EventTypeTemplatePublished` mappings describe the migration as it stood at the time; both types were later removed entirely from the shared module (`pkg/events` retired platform-wide, rev 2.4 — §3 and Revision history), so neither mapping exists on either side today. Every other mapping above (`dsl.*`) is unaffected and still describes the current state.
+
 Direct reference was chosen over a type alias for one source of truth on the type with no indirection layer, at the cost of a wider one-time diff than an alias would have required (a 2-file change touching only `compiled_plan.go`/`eventpayloads.go`). See Appendix A #8 for the full trade-off.
 
-Execution Service simply imports `pkg/dsl`/`pkg/events` directly from day one — no migration, no interim hand-rolled type ever exists to retire.
+Execution Service simply imports `pkg/dsl` directly from day one — no migration, no interim hand-rolled type ever exists to retire.
 
 ---
 
@@ -386,8 +374,7 @@ One test per artifact class, run in each consuming repo's own CI — not central
 | Test | Asserts | Lives in | Fails when |
 | --- | --- | --- | --- |
 | DSL round-trip | Marshal a `pkg/dsl.CompiledCollaboration` fixture → JSON → unmarshal → deep-equal the original; separately, unmarshal a real stored `compiled_plan_json` blob (from a real `workflow_version` row or a `design/Workflows/*.compiled.json` fixture) → the struct has no unexpected zero-valued required field | `workflow-definition-service`'s own test suite, and `workflow-models`'s own `pkg/dsl/roundtrip_test.go` | The compiler starts emitting a shape `pkg/dsl` doesn't have a field for, or a struct field's JSON tag changes without a corresponding compiler update |
-| Event round-trip | Marshal a `pkg/events.TemplatePublishedPayload` fixture → JSON → structurally diff against Definition's own registered `internal/eventschema/WorkflowTemplatePublishedPayload.json` (the file `make extract-schemas` produces from `api/asyncapi.yaml`) | `workflow-definition-service`'s own CI, alongside the existing `schema-validate`/`schema-diff` targets | The struct and the registered AsyncAPI schema diverge |
-| Execution decode-side sanity | Execution's own test suite decodes a real, currently-registered `workflow.template.published` envelope (a fixture captured from Definition's actual output, not hand-constructed) using `pkg/events.TemplatePublishedPayload` and asserts no field is silently dropped | `workflow-execution-service`'s own test suite (once that repo has code) | Definition's real wire shape and the shared struct have drifted from Execution's own decode assumptions |
+| _Event round-trip / Execution decode-side sanity — retired rev 2.4 alongside `pkg/events`/`TemplatePublishedPayload` and the `workflow.template.published` event they tested (§3; see Revision history)_ | | | |
 
 This does not replace `platform-schemagov`'s own CI validate/diff/register jobs (§1) — it's an additional, narrower check that the Go representation hasn't drifted from the wire one, running alongside the existing schema-governance pipeline, not instead of it.
 
@@ -409,11 +396,8 @@ workflow-models/
     │   │                           SubWorkflowStep, CallPoolStep, IOMapping, IOVar,
     │   │                           MessagePath, ErrorPath, TimerPath
     │   └── roundtrip_test.go       golden struct↔JSON drift test (package dsl_test)
-    ├── enums/
-    │   └── stage_type.go           StageType constants + the one shared event's wire-type constant
-    └── events/
-        ├── template_published.go   TemplatePublishedPayload
-        └── roundtrip_test.go       golden struct↔JSON + required-field drift test (package events_test)
+    └── enums/
+        └── stage_type.go           StageType constants
 ```
 
 File split follows the same struct-family grouping `compiled_plan.go` already uses internally (collaboration/plan/stage/step) — a mechanical reorganization into multiple files, not a redesign; each consuming repo's own `go.mod` picks up the module as a single dependency regardless of this internal file count.
@@ -426,7 +410,7 @@ Publishing/versioning matches the other org private Go libs (`platform-events`/`
 
 Residual build-list items not already covered by §6–§9 above:
 - Populate the `Extras`/`IOMapping` key registry (§7) as real keys are identified; add the `exec.`-prefix validator.
-- Build Execution's parser and event codec against the module from day one — no interim hand-rolled types.
+- Build Execution's parser and event codec against the module from day one — no interim hand-rolled types. **N/A** — moot: `pkg/events` was retired (rev 2.4, §3) before Execution ever built one.
 - Extend `buf`'s breaking-change gate to cover the new `dsl_schema_version` proto field (§6.1) once added.
 
 ---
@@ -439,7 +423,7 @@ Residual build-list items not already covered by §6–§9 above:
 | --- | --- | --- |
 | `ARCHITECTURE.md` | all three | Layer model, package dependency graph, per-package public-API tables, sequence-diagram flows, a "key invariants" table, performance characteristics |
 | `CHANGELOG.md` | all three | Keep a Changelog format, one entry per release, per-symbol behavior + migration notes |
-| `VERSIONING.md` | all three | Explicit SemVer policy — what counts as public API (`pkg/dsl`/`pkg/events`/`pkg/enums` here) vs. internal, MAJOR/MINOR/PATCH criteria |
+| `VERSIONING.md` | all three | Explicit SemVer policy — what counts as public API (`pkg/dsl`/`pkg/enums` here) vs. internal, MAJOR/MINOR/PATCH criteria |
 | `CONTRIBUTING.md` | all three | Contribution workflow |
 | `SECURITY.md` | all three | Vulnerability reporting process |
 | `Makefile` | all three | `setup`/`lint`/`test`/`test-ci`/`build`/`cover`/`race`/`godoc`/`ci` targets |
@@ -463,9 +447,9 @@ That doc made the original DSL-half decision (shared module, schema versioning, 
 | 1 | Named `workflow-models`, not `platform-workflow-dsl` or `platform-models` | Broadens the earlier DSL-only name once the module also holds event and enum types; `platform-models` is IAM's own unbuilt, platform-wide name (`iam-hld.md` §15.4) carrying a cross-team-review requirement this actively-changing, 2-service module doesn't need — referred to IAM (`IAM/platform-models-status-sync.md`), not claimed here. |
 | 2 | A shared Go module, not a hand-maintained JSON Schema or proto message | The Go structs are already the source of truth; publishing them as an imported module makes a new field/element a compile-time Go error the instant a consumer bumps the dependency. Proto was rejected for the plan shape specifically: `ExecutionStep` is a 7-way, recursive, variant-heavy union, both consumers are already Go, and a `.proto` would itself become a second hand-synced source of truth. |
 | 3 | Wire contract and in-process contract are two separate, both-required artifacts for events | The Glue-registered JSON Schema stays the cross-language wire authority (governed by `platform-schemagov`); this module's Go struct is the Go-side compile authority. A golden round-trip test (§9) is the tripwire that fails CI if they diverge — this module complements schema governance, it doesn't replace it. |
-| 4 | Moving `TemplatePublishedPayload` here changes nothing about `platform-schemagov`'s extraction pipeline | Extraction is entirely AsyncAPI-YAML-driven (`api/asyncapi.yaml` → `make extract-schemas` → `internal/eventschema/*.json`), never Go-source-driven. Each service still hand-authors its own `asyncapi.yaml` entry and runs its own independent validate/diff/register job against Glue regardless of where the Go struct lives. |
-| 5 | The module's real value is working around Go's `internal/` package visibility, not reducing AsyncAPI/Glue-side duplication | `TemplatePublishedPayload` lives in Definition's `internal/core/domain` today — a compiler-enforced restriction stops Execution importing it. The only alternatives are an independent hand-mirrored struct (the exact failure class this module exists to close) or publishing it once, externally, so both services import the identical definition. |
-| 6 | Scope rule: only what both services actually need, re-derived once already | A type only one side reads or writes stays in that service's own domain package. Applied to shrink `pkg/events`/`pkg/enums` from an earlier, broader draft down to one struct and one constant family — Execution's 18 outbound + 5 inbound payloads and their enums are Execution-only (§5). |
+| 4 | Moving `TemplatePublishedPayload` here changes nothing about `platform-schemagov`'s extraction pipeline | Extraction is entirely AsyncAPI-YAML-driven (`api/asyncapi.yaml` → `make extract-schemas` → `internal/eventschema/*.json`), never Go-source-driven. Each service still hand-authors its own `asyncapi.yaml` entry and runs its own independent validate/diff/register job against Glue regardless of where the Go struct lives. Superseded by rev 2.4 — `TemplatePublishedPayload`/`pkg/events` were removed entirely; retained as the historical record of the original placement rationale. |
+| 5 | The module's real value is working around Go's `internal/` package visibility, not reducing AsyncAPI/Glue-side duplication | `TemplatePublishedPayload` lives in Definition's `internal/core/domain` today — a compiler-enforced restriction stops Execution importing it. The only alternatives are an independent hand-mirrored struct (the exact failure class this module exists to close) or publishing it once, externally, so both services import the identical definition. Superseded by rev 2.4 — the event this decision was about (`workflow.template.published`) is retired and `TemplatePublishedPayload` no longer exists; retained as historical record. |
+| 6 | Scope rule: only what both services actually need, re-derived twice now | A type only one side reads or writes stays in that service's own domain package. Originally applied to shrink `pkg/events`/`pkg/enums` from an earlier, broader draft down to one struct and one constant family; `pkg/events` was later retired entirely (rev 2.4) once its one struct's backing event was retired, so the rule now governs `pkg/enums` alone. Execution's 18 outbound + 5 inbound payloads and their enums remain Execution-only (§5). |
 | 7 | `platform-events`' `Envelope[T]` is not re-exported | Both services already import `platform-events` directly for it; a re-export is a minor convenience, not something either service requires from this module. |
 | 8 | Definition migrates via direct reference to the module, not a type alias | Superseded a rev-2.0 decision to alias (`type CompiledPlan = dsl.CompiledPlan`). Direct reference gives one source of truth for the type with no indirection layer through `domain`, at the cost of a wider one-time diff — 247 occurrences across 27 files, versus the alias approach's 2-file change (`compiled_plan.go`/`eventpayloads.go`). `.go-arch-lint.yml`'s import-direction rules still need no edit either way: `depOnAnyVendor: true` leaves vendored-module imports unrestricted regardless of which internal component does the importing (§8). |
 | 9 | `Extras`/`IOMapping` unknown-key decode policy is asymmetric by prefix, not uniform | An unrecognized `exec.`-prefixed key is routing/gating semantics this build predates and must hard-fail; any other unrecognized key is a Zeebe custom property that must soft-ignore, since hard-failing on it would block Definition from adding a UI-only or audit-only property (§7). |
@@ -479,7 +463,7 @@ That doc made the original DSL-half decision (shared module, schema versioning, 
 | `CompiledCollaboration.SchemaVersion` + `GetCompiledWorkflowResponse.dsl_schema_version` | Definition Service | Factory/Strategy compatibility layer, `execution_service.md` §2.5 (§6.1) |
 | `Extras`/`IOMapping` key registry | Definition Service / Execution team | Empty — populate as keys are given real meaning (§7) |
 | `platform-models` naming collision | IAM | Referred, no answer yet (`IAM/platform-models-status-sync.md`) |
-| This module's own event `.v2` dual-publish window | Execution team | Not yet needed; Execution's own outbound catalogue set 30 days as precedent (`execution_service.md` §6.8) — carry the same number here once a breaking change actually happens (§6.2) |
+| This module's own event `.v2` dual-publish window | Execution team | **N/A** — moot: `pkg/events` was retired (rev 2.4, §3) before this was ever needed; Execution's own outbound catalogue's 30-day precedent (`execution_service.md` §6.8) remains the number to carry over if an event is ever added back (§6.2) |
 | `CompiledPlan.TaskQueue` tier-based routing logic | Definition Service | Documented intent only, zero compiler logic exists (§2.2) |
 | `DepartmentDef.IAMDepartmentID` never populated | Definition Service | Hard cross-repo blocker — Execution's `workflow_task.department_id uuid NOT NULL` can't be populated until Definition reads a real IAM department UUID from a BPMN lane's `extensionElements` (§2.2) |
 | Module tag/publish (`v1.0.0`) | Definition Service | `v0.1.0-beta.1` pre-release tagged and consumed; `v1.0.0` not yet cut (§8) |
@@ -513,3 +497,4 @@ One row per §12 gap — Blocker (must exist before the `v1.0.0` tag) or Deferre
 | 2.1 | 2026-07-26 | `workflow-models@v0.1.0-beta.1` tagged and consumed by `workflow-definition-service` for integration testing. §8 and Appendix A #8 revised: Definition migrates via **direct reference** to `pkg/dsl`/`pkg/events`/`pkg/enums`, not the type alias originally specified — `compiled_plan.go`/`eventpayloads.go` are deleted outright and every caller (247 occurrences across 27 files) repoints at the module directly, confirmed working end-to-end (`make test`/`make arch-lint`/`make build` all green). This reverses the rev-1.0/2.0 alias decision; the trade-off (wider diff, no indirection layer) was made deliberately, not discovered as a defect in the prior approach. |
 | 2.2 | 2026-08-11 | Connector-task support added to `pkg/dsl`/`pkg/enums`, closing a gap `automatic_connector_tasks.md` had described conceptually but never given concrete Go field names. §2.3: `StageDef` gains `ConnectorType string` (`connector_type,omitempty`) and `IOMapping *IOMapping` (`io_mapping,omitempty`, reusing §2.5's existing `IOMapping`/`IOVar` shape). §4.1: new `StageTypeConnector = "connector"` constant, sixth member of the `StageType` table. Appendix A gained decision #11 (dedicated field vs. compound-string parsing). Full worker-runtime and connector-catalogue design that consumes these fields now lives in `workflow_connectors.md`. |
 | 2.3 | 2026-08-11 | `automatic_connector_tasks.md` consolidated into `workflow_connectors.md`; the former deleted, the latter's internal sections renumbered. §2.3's `IOMapping.Outputs` citation repointed at the new §6.5 (Runtime Loop) — no field or behavior change, citation-only. |
+| 2.4 | 2026-08-29 | `pkg/events` removed entirely — the `workflow.template.published` event is retired platform-wide (also removed from `workflow-definition-service`, the Execution Service, and `event_consumer`). `TemplatePublishedPayload` and `enums.EventTypeTemplatePublished` no longer exist; the module is now exactly two packages, `pkg/dsl` and `pkg/enums`, with zero edges between them. The event's only real runtime behavior — Execution's compiled-plan cache pre-warm (`execution_service.md` §6.2) — was already dead code before this removal, leaving nothing but payload validation and dedup-recording behind it; judged not useful enough to keep on its own. §3/§4.2 kept as retired stubs rather than renumbered, so every other section's cross-references stay valid; Appendix A rows 4–6 and the affected Appendix B/§11 items marked superseded/N/A accordingly. |
