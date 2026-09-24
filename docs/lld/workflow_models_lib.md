@@ -15,6 +15,7 @@
    - 2.3 `StageDef` / `BoundaryTimer`
    - 2.4 `ExecutionPlan` / `ExecutionStep`
    - 2.5 Branch & Step Variants
+   - 2.6 `ExpandCalls`
 3. Package Reference: `pkg/events` (Retired)
 4. Package Reference: `pkg/enums`
 5. Scope Boundary: What's Not In This Module
@@ -41,7 +42,7 @@
 Go 1.26, zero external dependencies. Two packages: `pkg/dsl`, `pkg/enums`. It exists to close two structural drift sources that are otherwise kept in sync by discipline, not by the compiler — one of them dormant since `pkg/events` was retired (rev 2.4; §3):
 
 1. **The compiled-plan DSL travels as an opaque JSON string.** `DefinitionService.GetCompiledWorkflow` returns `compiled_plan_json` as a plain `string`, not a typed message. Nothing stops Definition's compiler from adding a BPMN element handler, an `ExecutionStep` variant, or a struct field without Execution ever finding out until an instance fails at runtime. Two drift bugs already exist in the codebase from this class of problem: `eventBasedGateway` silently dropped by XML parsing, and `inclusiveGateway` inconsistently handled across code and documentation.
-2. **Event payload structs are hand-mirrored against each service's own AsyncAPI spec.** Execution does this today for its 18 outbound payloads, each hand-matched against its own `api/asyncapi.yaml` by discipline alone with no compiler check between a struct and its governing schema.
+2. **Event payload structs are hand-mirrored against each service's own AsyncAPI spec.** Execution does this today for its 18 outbound payloads, each hand-matched against its own `api/asyncapi.yaml` by discipline alone with no compiler check between a struct and its governing schema. `workflow.template.published` is the sharp illustrative case for this risk, even though the event itself is now retired platform-wide (rev 2.4; §3): its `TemplatePublishedPayload` had to match `WorkflowTemplatePublishedPayload` in Definition's own `api/asyncapi.yaml`, Definition produced the event, and Execution consumed it for cache pre-warm (`execution_service.md` §6.2) — two independently hand-maintained copies of the same contract sitting on either side of the event bus with no compiler check between them. No event currently crosses the Definition↔Execution boundary, so this drift source is dormant, not closed: the same risk recurs unchanged the moment some future event needs to cross this boundary.
 
 Both failure classes are the same shape: a second source of truth kept in sync by discipline. Publishing the real Go structs as an importable module turns a silent runtime surprise into a compile-time error the moment a consumer bumps the dependency.
 
@@ -64,7 +65,7 @@ The top-level entry point — one `CompiledCollaboration` per BPMN collaboration
 | Field | Type | JSON tag | Purpose |
 | --- | --- | --- | --- |
 | `MainPlan` | `string` | `main_plan` | Name of the primary pool — the Temporal workflow entry point. |
-| `Plans` | `[]*CompiledPlan` | `plans` | Every compiled pool, including pools marked `Ignored` (§2.2) — never filtered out at this level. |
+| `Plans` | `[]*CompiledPlan` | `plans` | Every compiled pool, including pools marked `Ignored` (§2.2), and every called process, compiled once and referenced by `CallPlanStep` (§2.5) — never filtered out at this level. |
 | `Messages` | `[]MessageDef` | `messages` | Every named BPMN message crossing pool boundaries in this collaboration. |
 
 `MessageDef`:
@@ -115,7 +116,7 @@ One `CompiledPlan` per BPMN pool/participant.
 | `ID` | `string` | `id` | BPMN element ID. |
 | `Name` | `string` | `name,omitempty` | Human-readable label. |
 
-**Definition populates it via** `bpmncore/compile.go`'s per-pool assembly and `bpmncore/qualify.go`'s lane-to-department resolution. `IAMDepartmentID` is **never populated today** — every code path (`bpmncore/traverse.go`'s `DeptOf`, `bpmncore/graph.go`'s `LaneNameFor`) emits only the BPMN lane's `name` attribute, never a real IAM department UUID (Appendix B). `CompiledPlan.TaskQueue` is documented intent only — no compiler logic resolves a tenant's plan tier into a queue name yet (Appendix B).
+**Definition populates it via** `bpmncore/compile.go`'s per-pool assembly and `bpmncore/qualify.go`'s lane-to-department resolution. `ID` is the lane's `name`; `IAMDepartmentID` is the lane's `dept_id` property (`bpmncore/traverse.go`'s `DeptOf`, `bpmncore/graph.go`'s `DeptIDFor`). A module lane without `dept_id` is an open slot whose `IAMDepartmentID` a calling `CallPlanStep` supplies (§2.6). `CompiledPlan.TaskQueue` is documented intent only — no compiler logic resolves a tenant's plan tier into a queue name yet (Appendix B).
 
 **Execution consumes it via** `execution_service.md` §3.2 (Worker Topology & Task-Queue Registration) for `TaskQueue` (snapshotted once at instantiation onto `workflow_instance.task_queue`); `Ignored` drives the ignored-pool admin-stub dispatch (§8.2's worked example); `IAMDepartmentID` is the field Execution's own `workflow_task.department_id uuid NOT NULL` column depends on and currently cannot populate correctly until Definition ships a real capture — a confirmed cross-repo blocker (Appendix B), not a mere type mismatch.
 
@@ -167,13 +168,14 @@ One `StageDef` per task/stage in a department's lane.
 | `Exclusive` | `[]ExclusiveBranch` | `exclusive,omitempty` | Conditional branches (§2.5). |
 | `SubWorkflow` | `*SubWorkflowStep` | `sub_workflow,omitempty` | A nested BPMN subprocess (§2.5). |
 | `CallPool` | `*CallPoolStep` | `call_pool,omitempty` | A hand-off to another compiled pool (§2.5). |
+| `CallPlan` | `*CallPlanStep` | `call_plan,omitempty` | A call to another plan of the collaboration: a `callActivity` (§2.5, §2.6). |
 | `IOMapping` | `*IOMapping` | `io_mapping,omitempty` | Variable input/output declarations (§2.5). |
 | `Extras` | `map[string]string` | `extras,omitempty` | Free-form bag (§7). |
 | `MessagePaths` | `[]MessagePath` | `message_paths,omitempty` | Message boundary events attached to this step (§2.5). |
 
 **Definition populates it via** the graph-walk assembly across `bpmncore/{traverse,compile,state,qualify}.go` — each BPMN control-flow construct (sequence flow, gateway, subprocess, call activity) emits exactly one `ExecutionStep` with exactly one of the above fields set.
 
-**Execution consumes it via** `runSteps`, the workflow function's execution algorithm (`execution_service.md` §2.5, Workflow-Function Execution Algorithm) — one non-nil field per step drives dispatch to the matching handler (sequential dispatch, parallel-branch fan-out, exclusive-gateway evaluation, subworkflow/call-pool recursion).
+**Execution consumes it via** `runSteps`, the workflow function's execution algorithm (`execution_service.md` §2.5, Workflow-Function Execution Algorithm) — one non-nil field per step drives dispatch to the matching handler (sequential dispatch, parallel-branch fan-out, exclusive-gateway evaluation, subworkflow/call-pool recursion). Execution runs `ExpandCalls` (§2.6) on the fetched collaboration first, so it never dispatches a `CallPlan` step itself.
 
 ### 2.5 Branch & Step Variants
 
@@ -237,11 +239,26 @@ Execution: `execution_service.md` §2.3 (subProcess, CallPool, and callActivity 
 
 Execution: §2.3 there — a Temporal child workflow dispatch; only the main pool may emit this.
 
+`CallPlanStep`:
+
+| Field | Type | JSON tag | Purpose |
+| --- | --- | --- | --- |
+| `NodeID` | `string` | `node_id` | BPMN element ID of the `callActivity`. Scopes every department the call brings in (§2.6). |
+| `Name` | `string` | `name,omitempty` | The `callActivity`'s name. |
+| `Plan` | `string` | `plan` | Name of the called plan in `CompiledCollaboration.Plans`. |
+| `Departments` | `map[string]string` | `departments,omitempty` | Binds a department of the called plan to a department of the calling plan. A called department absent from the map keeps its own `IAMDepartmentID`. |
+| `Assignees` | `map[string]string` | `assignees,omitempty` | A called task's `NodeID` → a default user for this call only. It replaces that task's own `DefaultAssignees`. |
+| `ErrorPaths` / `TimerPaths` / `MessagePaths` | as on `SubWorkflowStep` | `error_paths` / `timer_paths` / `message_paths`, `omitempty` | Boundary events attached to the `callActivity`. Their `TargetDept` names a department of the calling plan. |
+
+The step's own `IOMapping` and `Extras` carry the `callActivity`'s input/output mapping and properties, as on any other step.
+
+Execution: never sees this step. `ExpandCalls` (§2.6) turns it into a `SubWorkflowStep`, which `execution_service.md` §2.3 runs inline.
+
 `IOMapping` / `IOVar`:
 
 | Field | Type | JSON tag | Purpose |
 | --- | --- | --- | --- |
-| `Inputs` / `Outputs` | `[]IOVar` | `inputs,omitempty` / `outputs,omitempty` | Variable declarations for a `CallPoolStep`. |
+| `Inputs` / `Outputs` | `[]IOVar` | `inputs,omitempty` / `outputs,omitempty` | Variable declarations of a step (a `callActivity` or pool call) or of a connector stage. |
 | `Source` / `Target` (`IOVar`) | `string` | `source` / `target` | A single variable mapping. |
 
 Execution: applied **entry-only** — inputs are copied into `context_json` before the segment runs; there is no separate exit re-application, since the segment's own steps write `context_json` directly as they execute (`execution_service.md` §2.1).
@@ -256,13 +273,32 @@ Execution: applied **entry-only** — inputs are copied into `context_json` befo
 
 Execution: the instance-wide, node-keyed message-correlation buffer (§2.1 above), including cross-sibling-parallel-branch correlation, with one accepted residual — a consumed message survives a force-back past its sending branch; the re-fire becomes a fresh pending entry (`execution_service.md` §8.2's worked example).
 
-**Definition populates every struct in this subsection via** the same `bpmncore/{traverse,compile,state,qualify}.go` graph walk as §2.4, plus `element/{subprocess,call_activity}.go` for `SubWorkflowStep`/`CallPoolStep` specifically and `element/gateway_xor.go` for `ExclusiveBranch`.
+**Definition populates every struct in this subsection via** the same `bpmncore/{traverse,compile,state,qualify}.go` graph walk as §2.4, plus `element/subprocess.go` for `SubWorkflowStep`, `element/call_activity.go` for `CallPlanStep`, and `element/gateway_xor.go` for `ExclusiveBranch`.
+
+### 2.6 `ExpandCalls`
+
+`func ExpandCalls(c *CompiledCollaboration, maxStages int) (*CompiledCollaboration, error)` returns a copy of `c` in which every `CallPlan` step, in every plan, is replaced by the `SubWorkflowStep` the interpreter already runs. It is a pure function of `c`: the same input always gives the same output, and `c` is never modified.
+
+- **The step.** The `SubWorkflowStep` takes the call's `NodeID`, `Name` and boundary paths. Its `Plan` holds the called plan's steps, with any calls inside them expanded the same way.
+- **Departments.** Each department of the called plan is cloned into the calling plan with the ID `<NodeID>::<department ID>`. A nested call composes the prefix, so a department reached through two calls is `<outer NodeID>::<inner NodeID>::<department ID>`. `CallScopeSeparator` holds `"::"`.
+  - A department bound in `Departments` takes the bound department's `Label` and `IAMDepartmentID`.
+  - An unbound department keeps its own.
+  - `Ignore`, `Props` and the stages are copied. A stage named in `Assignees` gets that user as its only default assignee.
+- **References.** Every department reference inside the called steps is rewritten to the cloned IDs: `Sequential`, `ParallelBranch.DeptID`, `ExclusiveBranch.Target`/`RevertToDept`, the `TargetDept` of every path, and each stage's `BoundaryTimer`/`BoundaryMessage`. The call's own boundary paths keep the calling plan's departments.
+- **Identity.** A task inside a call has the node key `<NodeID>::<department ID>/<task NodeID>`. Two calls to the same plan therefore give distinct tasks.
+- **Errors.** A nil collaboration; two plans with one name; a missing plan; a call cycle; a called department with an empty ID (it would have no scoped ID); a cloned ID the calling plan already has; a binding of a department the called plan lacks; a binding to a department the calling plan does not itself own (a call binds to its caller's departments, never to another call's); and an `Assignees` key naming a task the called plan lacks. `ErrPlanTooLarge` is returned when a plan holds more than `maxStages` stages and calls after expansion, each call counting one; `maxStages <= 0` disables the check.
+- **Department IDs** must not contain `/`: a node key is `<department>/<task>`, and consumers split it at the first `/`.
+- **Message names are not scoped.** Two calls of one plan that run at the same time share the names of the messages inside it.
+
+Definition runs it on the plan it has just compiled, to count stages and to read tasks and departments. Execution runs it on every collaboration it decodes. Both therefore see the same node keys and IAM departments.
 
 ---
 
-## 3. Package Reference: `pkg/events`
+## 3. Package Reference: `pkg/events` (Retired)
 
-This package does not exist in the module anymore, kept as placeholder for any future shared event payloads.
+This package does not exist in the module today — see the Revision history's rev 2.4 row for what it held and why. The field-by-field table this section once carried for `TemplatePublishedPayload` is preserved in this file's git history (rev 2.2 and earlier); see `CHANGELOG.md`'s `[Unreleased]` § Removed entry for the platform-wide removal record.
+
+This section number is kept as a retired stub rather than renumbered away, so every other section's `§3`/`§4`/etc. cross-reference in this document stays valid.
 
 ---
 
@@ -285,21 +321,27 @@ An unrecognized `StageDef.Type` value is a valid forward-compat passthrough, not
 
 `ExecutionStep`'s variants have no wire discriminator string to constantize here — as §2.4 states, "which variant" is just "which field is non-nil," already expressed in Go's type system.
 
+### 4.2 `EventTypeTemplatePublished` (Retired)
+
+This constant does not exist in the package today — it was removed together with `pkg/events` (§3) when the `workflow.template.published` event was retired platform-wide. See the Revision history's rev 2.4 row for the full record.
+
+The 18 outbound wire-type strings, and the payload enums `initiator`/tenant `status`/delegation `scope`/`ended_reason`/force-route `direction`, live in Execution's own enum constants, not this package (§5) — Definition never references any of these.
+
 ---
 
 ## 5. Scope Boundary: What's Not In This Module
 
 The module holds only what both Definition Service and Execution Service actually need — not everything either service happens to touch. Applied strictly:
 
-**Execution's 18 outbound event payloads** (`workflow.instance.started`/`.paused`/`.resumed`/`.cancelled`/`.terminated`/`.degraded`/`.failed`/`.finished`/`.force-routed`, `workflow.task.created`/`.claimed`/`.completed`/`.deferred`/`.reassigned`/`.superseded`/`.failed`/`.sla-warning`/`.sla-breached`, per `execution_service.md` §6.4) are consumed by Audit, Notification, Tender, LLM, and the Dashboard Stream Gateway — never by Definition. They stay in Execution's own domain package.
+**Execution's 18 outbound event payloads** (`WorkflowInstanceStarted`/`.paused`/`.resumed`/`.cancelled`/`.terminated`/`.degraded`/`.failed`/`.finished`/`.force-routed`, `WorkflowTaskCreated`/`.claimed`/`.completed`/`.deferred`/`.reassigned`/`.superseded`/`.failed`/`.sla-warning`/`.sla-breached`, per `execution_service.md` §6.4) are consumed by Audit, Notification, Tender, LLM, and the Dashboard Stream Gateway — never by Definition. They stay in Execution's own domain package.
 
-**The 5 inbound payloads Execution decodes that IAM owns** (`delegation.started`, `delegation.ended`, `tenant.state.changed`, `user.deleted`, `user.availability.changed`, per `execution_service.md` §6.2) are Execution-only too — Definition never touches them.
+**The 5 inbound payloads Execution decodes that IAM owns** (`DelegationStarted`, `DelegationEnded`, `TenantStateChanged`, `UserDeleted`, `UserAvailabilityChanged`, per `execution_service.md` §6.2) are Execution-only too — Definition never touches them.
 
 **Their enum values** — `initiator` (`admin`/`tenant_state`/`safety_net`/`ooo`/`degraded_recovery`/`override`/`delegation`), tenant `status`, delegation `scope`/`ended_reason`, force-route `direction` — live in Execution's own domain package for the same reason.
 
 **`platform-events`' `Envelope[T]`** is not re-exported (Appendix A #7) — a convenience neither service requires from this module.
 
-a module that quietly grows to hold "everything Execution happens to touch" stops being a compile-time-shared contract and becomes an unversioned dumping ground neither service can safely evolve independently. The module's footprint is deliberate — today it holds exactly `pkg/dsl` and `pkg/enums`'s `StageType` constants.
+Why this matters as its own boundary, not an implementation detail: a module that quietly grows to hold "everything Execution happens to touch" stops being a compile-time-shared contract and becomes an unversioned dumping ground neither service can safely evolve independently. The module's footprint is deliberate — today it holds exactly `pkg/dsl` and `pkg/enums`'s `StageType` constants (see Revision history for how the scope narrowed to this) — not an oversight to be quietly grown back.
 
 ---
 
@@ -307,10 +349,9 @@ a module that quietly grows to hold "everything Execution happens to touch" stop
 
 ### 6.1 DSL Schema Versioning
 
-Not yet built. Planned:
-
-- `CompiledCollaboration` gains a `SchemaVersion string`, stamped by the compiler at publish time (`version_publish.go`) — a plan is compiled once and stored immutably, so the version is captured at that moment, never re-derived later.
-- `GetCompiledWorkflowResponse` gains an additive `dsl_schema_version` field (non-breaking under `buf`'s `breaking: use: FILE` policy), so Execution can check compatibility without parsing the JSON blob and fail closed on a major-version mismatch.
+- `CompiledCollaboration.SchemaVersion int` is stamped by the compiler at publish time (`CompileForPublish`) — a plan is compiled once and stored immutably, so the version is captured at that moment, never re-derived later.
+- `GetCompiledWorkflowResponse.dsl_schema_version` carries it (non-breaking under `buf`'s `breaking: use: FILE` policy), so Execution can check compatibility without parsing the JSON blob and fail closed on a major-version mismatch.
+- A new `ExecutionStep` variant is additive in shape but not safe for a consumer that predates it (§7: an unknown variant is a hard error). `CallPlan` (§2.5) is such a variant; its contract is that consumers run `ExpandCalls` (§2.6) before interpreting a plan, so it never reaches an interpreter.
 - Orthogonal to `version_number` (the workflow template's own draft/published revision, not the DSL shape). The producer stays decoupled: Definition need not know what DSL version Execution supports; Execution self-checks the artifact it receives.
 
 ### 6.2 Event Versioning
@@ -366,6 +407,7 @@ One test per artifact class, run in each consuming repo's own CI — not central
 | Test | Asserts | Lives in | Fails when |
 | --- | --- | --- | --- |
 | DSL round-trip | Marshal a `pkg/dsl.CompiledCollaboration` fixture → JSON → unmarshal → deep-equal the original; separately, unmarshal a real stored `compiled_plan_json` blob (from a real `workflow_version` row or a `design/Workflows/*.compiled.json` fixture) → the struct has no unexpected zero-valued required field | `workflow-definition-service`'s own test suite, and `workflow-models`'s own `pkg/dsl/roundtrip_test.go` | The compiler starts emitting a shape `pkg/dsl` doesn't have a field for, or a struct field's JSON tag changes without a corresponding compiler update |
+| `ExpandCalls` | Bindings, scoped department IDs, nested calls, call-site assignees, reference rewriting, refusals, stage budget, determinism | `workflow-models`'s own `pkg/dsl/expand_test.go` | Expansion stops producing the node keys and IAM departments both services rely on |
 | _Event round-trip / Execution decode-side sanity — retired rev 2.4 alongside `pkg/events`/`TemplatePublishedPayload` and the `workflow.template.published` event they tested (§3; see Revision history)_ | | | |
 
 This does not replace `platform-schemagov`'s own CI validate/diff/register jobs (§1) — it's an additional, narrower check that the Go representation hasn't drifted from the wire one, running alongside the existing schema-governance pipeline, not instead of it.
@@ -385,8 +427,10 @@ workflow-models/
     │   ├── plan.go                 CompiledPlan, DepartmentDef, VisualElementDef
     │   ├── stage.go                StageDef, BoundaryTimer
     │   ├── execution_step.go       ExecutionPlan, ExecutionStep, ParallelBranch, ExclusiveBranch,
-    │   │                           SubWorkflowStep, CallPoolStep, IOMapping, IOVar,
+    │   │                           SubWorkflowStep, CallPoolStep, CallPlanStep, IOMapping, IOVar,
     │   │                           MessagePath, ErrorPath, TimerPath
+    │   ├── expand.go               ExpandCalls, ErrPlanTooLarge, CallScopeSeparator
+    │   ├── expand_test.go          ExpandCalls behaviour (package dsl_test)
     │   └── roundtrip_test.go       golden struct↔JSON drift test (package dsl_test)
     └── enums/
         └── stage_type.go           StageType constants
@@ -490,3 +534,6 @@ One row per §12 gap — Blocker (must exist before the `v1.0.0` tag) or Deferre
 | 2.2 | 2026-08-11 | Connector-task support added to `pkg/dsl`/`pkg/enums`, closing a gap `automatic_connector_tasks.md` had described conceptually but never given concrete Go field names. §2.3: `StageDef` gains `ConnectorType string` (`connector_type,omitempty`) and `IOMapping *IOMapping` (`io_mapping,omitempty`, reusing §2.5's existing `IOMapping`/`IOVar` shape). §4.1: new `StageTypeConnector = "connector"` constant, sixth member of the `StageType` table. Appendix A gained decision #11 (dedicated field vs. compound-string parsing). Full worker-runtime and connector-catalogue design that consumes these fields now lives in `workflow_connectors.md`. |
 | 2.3 | 2026-08-11 | `automatic_connector_tasks.md` consolidated into `workflow_connectors.md`; the former deleted, the latter's internal sections renumbered. §2.3's `IOMapping.Outputs` citation repointed at the new §6.5 (Runtime Loop) — no field or behavior change, citation-only. |
 | 2.4 | 2026-08-29 | `pkg/events` removed entirely — the `workflow.template.published` event is retired platform-wide (also removed from `workflow-definition-service`, the Execution Service, and `event_consumer`). `TemplatePublishedPayload` and `enums.EventTypeTemplatePublished` no longer exist; the module is now exactly two packages, `pkg/dsl` and `pkg/enums`, with zero edges between them. The event's only real runtime behavior — Execution's compiled-plan cache pre-warm (`execution_service.md` §6.2) — was already dead code before this removal, leaving nothing but payload validation and dedup-recording behind it; judged not useful enough to keep on its own. §3/§4.2 kept as retired stubs rather than renumbered, so every other section's cross-references stay valid; Appendix A rows 4–6 and the affected Appendix B/§11 items marked superseded/N/A accordingly. |
+| 2.5 | 2026-09-10 | The five inbound IAM-owned payload names in §5 corrected from dotted-lowercase to PascalCase (`DelegationStarted`, `DelegationEnded`, `TenantStateChanged`, `UserDeleted`, `UserAvailabilityChanged`), matching IAM's confirmed platform-wide convention and `execution_service.md` rev 1.42. Documentation-only — these payloads are Execution-side and were never in this module. |
+| 2.6 | 2026-09-10 | The 2 dotted-lowercase `workflow.*` citations renamed to PascalCase, following `execution_service.md` rev 1.45. These are Execution-side wire types this module does not carry — `pkg/events` was removed in rev 2.4 — so this is a citation fix only. |
+| 2.7 | 2026-09-24 | **Called processes are referenced, not inlined** (§2.4, §2.5, §2.6). New `ExecutionStep.CallPlan` / `CallPlanStep`: a `callActivity` names a plan of the collaboration, compiled once, and carries its department bindings, call-site assignees and boundary paths. New `ExpandCalls`, the one shared, pure expansion both services run: it turns each call into the `SubWorkflowStep` Execution already interprets, with call-scoped departments (`<NodeID>::<department>`), so two calls of one module give distinct tasks and each bound department carries the caller's IAM department. §2.1 `Plans` includes called processes. §9 and §10 list the new tests and file. The in-repo copy was re-synced from the design copy first; it lacked revs 2.5–2.6. `ExpandCalls` refuses empty and colliding department IDs, bindings to another call's departments and unknown assignee tasks, and counts calls toward its budget. §2.2's `IAMDepartmentID` note and §6.1 were stale and now state the shipped behaviour. |

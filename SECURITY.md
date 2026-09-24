@@ -47,7 +47,7 @@ which publish to SNS/SQS or connect to Postgres.
 | Assumption | Implication |
 |-----------|-------------|
 | This module never decodes untrusted JSON itself | Decoding happens in the consuming service (Definition or Execution); this module only defines the shape. Bounding payload size, depth, and field counts is the consuming service's responsibility. |
-| Struct field values are opaque strings/enums | This module performs no validation beyond Go's type system; a malicious `Extras`/`IOMapping` value is a consuming-service concern, not this module's. |
+| Struct field values are opaque strings/enums | Beyond Go's type system, the only checks are `ExpandCalls`'s structural ones (plan references, cycles, bindings, a stage budget); a malicious `Extras`/`IOMapping` value is a consuming-service concern, not this module's. |
 
 ## Scope
 
@@ -55,8 +55,9 @@ In scope for vulnerability reports:
 
 - Supply-chain vulnerabilities in this module's own dev-tooling dependencies
   (`go.sum`, surfaced via `make vuln-check`).
-- Any code path in `pkg/dsl` or `pkg/enums` that is not pure data (none
-  exist today — flag if one is ever introduced).
+- `dsl.ExpandCalls`, the one code path in `pkg/dsl` or `pkg/enums` that is
+  not pure data: it runs on plans the consuming services decode, so a plan
+  that makes it loop, panic or allocate without bound is in scope.
 
 Out of scope: vulnerabilities in `workflow-definition-service`'s or the
 future execution service's own decode/validation logic — that's each

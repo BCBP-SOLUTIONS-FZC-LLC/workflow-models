@@ -52,7 +52,8 @@ full field-by-field reference.
 | `DepartmentDef` | One compiled BPMN lane |
 | `StageDef` | One compiled task/stage |
 | `ExecutionPlan` / `ExecutionStep` | The step sequence driving the workflow function |
-| `ParallelBranch`, `ExclusiveBranch`, `SubWorkflowStep`, `CallPoolStep` | `ExecutionStep` variants |
+| `ParallelBranch`, `ExclusiveBranch`, `SubWorkflowStep`, `CallPoolStep`, `CallPlanStep` | `ExecutionStep` variants |
+| `ExpandCalls` | Turns every `CallPlanStep` into a `SubWorkflowStep` with call-scoped departments; the one piece of logic in `pkg/dsl`, shared so both services derive the same node keys |
 | `IOMapping`, `IOVar`, `MessagePath`, `ErrorPath`, `TimerPath` | Supporting types for boundary events and variable mapping |
 
 ### `pkg/enums`
@@ -72,13 +73,10 @@ constants.
 
 ## Coverage note
 
-`pkg/dsl` and `pkg/enums` are pure struct/const declarations today — zero
-executable statements. `go test -cover` correctly reports
-"no statements" / 0.0%. No numeric coverage gate is wired into CI for this
-reason (see `Makefile`'s `cover-func` target and `.github/workflows/ci.yml`) —
-a gate would fail permanently regardless of test quality. Revisit once real
-logic exists (e.g. the `Extras`/`IOMapping` `exec.`-prefix validator planned
-in design doc §7/§11).
+`pkg/dsl`'s only executable code is `ExpandCalls` (`expand.go`), tested by
+`expand_test.go`; everything else in `pkg/dsl` and `pkg/enums` is a
+declaration. No numeric coverage gate is wired into CI (see `Makefile`'s
+`cover-func` target and `.github/workflows/ci.yml`).
 
 ## Key invariants
 

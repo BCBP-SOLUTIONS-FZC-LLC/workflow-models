@@ -114,6 +114,18 @@ func TestCompiledCollaboration_RoundTrip(t *testing.T) {
 							Extras:       map[string]string{"exec.priority": "high"},
 							MessagePaths: []dsl.MessagePath{{MessageName: "notify", Interrupting: false}},
 						},
+						{
+							CallPlan: &dsl.CallPlanStep{
+								NodeID:       "Activity_call1",
+								Name:         "Prepare response",
+								Plan:         "prepare_response@v3",
+								Departments:  map[string]string{"Sender": "Bid-No-Bid Review/Tender Business"},
+								Assignees:    map[string]string{"Task_prepare": "018e1f2a-0000-7000-8000-000000000021"},
+								ErrorPaths:   []dsl.ErrorPath{{ErrorCode: "E_REJECT", ShortCircuit: true, TargetDept: "escalation"}},
+								TimerPaths:   []dsl.TimerPath{{Duration: "P5D", Interrupting: true, TargetDept: "escalation"}},
+								MessagePaths: []dsl.MessagePath{{MessageName: "withdraw", Interrupting: true, TargetDept: "ops"}},
+							},
+						},
 					},
 				},
 				VisualElements: []dsl.VisualElementDef{

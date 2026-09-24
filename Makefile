@@ -91,12 +91,9 @@ ci: tidy vet lint test-ci build
 # -----------------------------
 # COVERAGE
 # -----------------------------
-# NOTE: pkg/dsl, pkg/enums, pkg/events are pure struct/const declarations
-# today (zero executable statements) — `go test -cover` reports
-# "no statements" / 0.0% total. These targets exist for future-proofing
-# (e.g. once the Extras/IOMapping exec.-prefix validator lands per the
-# design doc §7/§11). Do NOT wire a numeric coverage gate into CI until
-# real logic exists — see ARCHITECTURE.md and ci.yml.
+# NOTE: pkg/dsl's only executable code is ExpandCalls (expand.go); the rest
+# of pkg/dsl and pkg/enums are declarations. No numeric coverage gate is
+# wired into CI — see ARCHITECTURE.md and ci.yml.
 
 cover:
 	$(GO) test ./pkg/... -race -count=1 -timeout 60s -coverpkg=$(COVER_PKG_LIST) -coverprofile=coverage.out

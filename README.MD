@@ -122,6 +122,7 @@ CompiledCollaboration                 (root artifact)
  │            │                         │                ├─ TimerPaths []TimerPath
  │            │                         │                └─ MessagePaths []MessagePath
  │            │                         ├─ CallPool  *CallPoolStep
+ │            │                         ├─ CallPlan  *CallPlanStep       → a plan in Plans, by name (see ExpandCalls)
  │            │                         ├─ IOMapping *IOMapping → Inputs/Outputs []IOVar
  │            │                         └─ MessagePaths []MessagePath
  │            └─ VisualElements []VisualElementDef
@@ -140,7 +141,7 @@ CompiledCollaboration                 (root artifact)
 | `StageDef` | `Type string` (holds `enums.StageType*` values), `Activity`, `NodeID,omitempty`, `Role`, `DefaultAssignees []string,omitempty`, `DueDate,omitempty`, `FollowUpDate,omitempty`, `BoundaryTimer *BoundaryTimer,omitempty`, `BoundaryMessage *MessagePath,omitempty`, `EngineNote,omitempty`, `Extras map[string]string,omitempty`, `IsZeebeUserTask bool,omitempty`, `ConnectorType string,omitempty`, `IOMapping *IOMapping,omitempty` |
 | `BoundaryTimer` | `Duration`, `Interrupting bool`, `TargetDept,omitempty` |
 | `ExecutionPlan` | `Steps []ExecutionStep` |
-| `ExecutionStep` | `Sequential []string,omitempty`, `Parallel []ParallelBranch,omitempty`, `Exclusive []ExclusiveBranch,omitempty`, `SubWorkflow *SubWorkflowStep,omitempty`, `CallPool *CallPoolStep,omitempty`, `IOMapping *IOMapping,omitempty`, `Extras map[string]string,omitempty`, `MessagePaths []MessagePath,omitempty` |
+| `ExecutionStep` | `Sequential []string,omitempty`, `Parallel []ParallelBranch,omitempty`, `Exclusive []ExclusiveBranch,omitempty`, `SubWorkflow *SubWorkflowStep,omitempty`, `CallPool *CallPoolStep,omitempty`, `CallPlan *CallPlanStep,omitempty`, `IOMapping *IOMapping,omitempty`, `Extras map[string]string,omitempty`, `MessagePaths []MessagePath,omitempty` |
 | `MessagePath` | `MessageName`, `Interrupting bool`, `TargetDept,omitempty` |
 | `IOMapping` | `Inputs []IOVar,omitempty`, `Outputs []IOVar,omitempty` |
 | `IOVar` | `Source`, `Target` |
@@ -150,6 +151,9 @@ CompiledCollaboration                 (root artifact)
 | `ErrorPath` | `ErrorCode,omitempty`, `ShortCircuit bool` (no omitempty), `TargetDept,omitempty` |
 | `TimerPath` | `Duration`, `Interrupting bool`, `TargetDept,omitempty` |
 | `CallPoolStep` | `Pool` |
+| `CallPlanStep` | `NodeID`, `Name,omitempty`, `Plan`, `Departments map[string]string,omitempty`, `Assignees map[string]string,omitempty`, `ErrorPaths`/`TimerPaths`/`MessagePaths,omitempty` |
+
+`ExpandCalls(c, maxStages)` returns a copy of a collaboration with every `CallPlan` step replaced by the `SubWorkflowStep` Execution runs, and the called plan's departments cloned into the caller as `<NodeID>::<department>`, bound to the caller's IAM departments. Both services run it, so they agree on node keys. `ErrPlanTooLarge` reports a plan over `maxStages` stages after expansion. See the design doc §2.6.
 
 ## Package reference — pkg/enums
 
@@ -174,7 +178,7 @@ An unrecognized `StageDef.Type` value is a valid forward-compat passthrough, not
 
 ## Testing model
 
-`pkg/dsl` has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual` against the original — the drift tripwire. `pkg/dsl` and `pkg/enums` are pure struct/const declarations with zero executable statements, so `go test -cover` reports 0% and no numeric coverage gate is wired into CI for this package.
+`pkg/dsl` has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual` against the original — the drift tripwire. `expand_test.go` covers `ExpandCalls`, the package's only executable code; everything else in `pkg/dsl` and `pkg/enums` is a declaration. No numeric coverage gate is wired into CI.
 
 ## Versioning and releases
 

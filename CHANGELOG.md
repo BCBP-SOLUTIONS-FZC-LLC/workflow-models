@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ExecutionStep.CallPlan` / `CallPlanStep`: a `callActivity` that calls another plan of the collaboration, compiled once, with its department bindings, call-site default assignees and boundary paths.
+- `ExpandCalls` and `ErrPlanTooLarge`: the shared, pure expansion of `CallPlan` steps into `SubWorkflowStep`s with call-scoped department IDs (`<NodeID>::<department>`). Definition and Execution both run it, so node keys and IAM departments agree. A consumer must run it before interpreting a plan: an interpreter that meets a `call_plan` step treats it as an unknown variant.
+
 ## [1.2.0-rc.4] - 2026-08-29
 
 ### Removed

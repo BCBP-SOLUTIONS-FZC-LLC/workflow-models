@@ -7,13 +7,15 @@ type ExecutionPlan struct {
 }
 
 // ExecutionStep is a single control-flow node in an ExecutionPlan — exactly
-// one of Sequential, Parallel, Exclusive, SubWorkflow, or CallPool is set.
+// one of Sequential, Parallel, Exclusive, SubWorkflow, CallPool, or CallPlan
+// is set.
 type ExecutionStep struct {
 	Sequential   []string          `json:"sequential,omitempty"`
 	Parallel     []ParallelBranch  `json:"parallel,omitempty"`
 	Exclusive    []ExclusiveBranch `json:"exclusive,omitempty"`
 	SubWorkflow  *SubWorkflowStep  `json:"sub_workflow,omitempty"`
 	CallPool     *CallPoolStep     `json:"call_pool,omitempty"`
+	CallPlan     *CallPlanStep     `json:"call_plan,omitempty"`
 	IOMapping    *IOMapping        `json:"io_mapping,omitempty"`
 	Extras       map[string]string `json:"extras,omitempty"`
 	MessagePaths []MessagePath     `json:"message_paths,omitempty"`
@@ -28,11 +30,9 @@ type MessagePath struct {
 	TargetDept   string `json:"target_dept,omitempty"`
 }
 
-// IOMapping carries variable input/output declarations. ExecutionStep uses it
-// for a callActivity step, where the Execution Service passes variables when
-// creating a child workflow; StageDef reuses the same shape for a
-// connector-typed stage, where there is no child workflow — Inputs are
-// instead resolved against the task's context at creation time and Outputs
+// IOMapping carries variable input/output declarations: on an ExecutionStep
+// for a callActivity or pool call, and on a connector-typed StageDef, where
+// Inputs are resolved against the task's context at creation time and Outputs
 // against the connector's own result.
 type IOMapping struct {
 	Inputs  []IOVar `json:"inputs,omitempty"`
@@ -90,6 +90,24 @@ type SubWorkflowStep struct {
 	ErrorPaths   []ErrorPath   `json:"error_paths,omitempty"`
 	TimerPaths   []TimerPath   `json:"timer_paths,omitempty"`
 	MessagePaths []MessagePath `json:"message_paths,omitempty"`
+}
+
+// CallPlanStep calls another plan of the same collaboration: a BPMN
+// callActivity whose target was compiled once into its own plan. Departments
+// binds each open department of the called plan to a department of the
+// calling plan; a called department absent from it keeps its own IAM
+// department. Assignees gives a called task, by its NodeID, a default user
+// for this call only. Consumers run ExpandCalls rather than interpreting this
+// step directly.
+type CallPlanStep struct {
+	NodeID       string            `json:"node_id"`
+	Name         string            `json:"name,omitempty"`
+	Plan         string            `json:"plan"`
+	Departments  map[string]string `json:"departments,omitempty"`
+	Assignees    map[string]string `json:"assignees,omitempty"`
+	ErrorPaths   []ErrorPath       `json:"error_paths,omitempty"`
+	TimerPaths   []TimerPath       `json:"timer_paths,omitempty"`
+	MessagePaths []MessagePath     `json:"message_paths,omitempty"`
 }
 
 // ErrorPath is an error-boundary-event branch attached to a SubWorkflowStep.
