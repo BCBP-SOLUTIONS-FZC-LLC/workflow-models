@@ -76,3 +76,32 @@ func TestLibraryCalls(t *testing.T) {
 		}
 	}
 }
+
+// TestLibraryCallBoundaries pins the boundary paths execution runs once the
+// golden's calls are expanded: each call keeps its interrupting boundary,
+// with no target department, and the send task runs between them.
+func TestLibraryCallBoundaries(t *testing.T) {
+	var c dsl.CompiledCollaboration
+	if err := json.Unmarshal(dsltest.LibraryCallBoundaries(), &c); err != nil {
+		t.Fatalf("golden does not decode: %v", err)
+	}
+	expanded, err := dsl.ExpandCalls(&c, 0)
+	if err != nil {
+		t.Fatalf("golden does not expand: %v", err)
+	}
+	steps := expanded.Plans[0].Execution.Steps
+	if len(steps) != 3 || steps[0].SubWorkflow == nil || len(steps[1].Sequential) != 1 || steps[2].SubWorkflow == nil {
+		t.Fatalf("steps = %+v, want CA_Timer, the send task's department, CA_Message", steps)
+	}
+	timer, msg := steps[0].SubWorkflow, steps[2].SubWorkflow
+	if timer.NodeID != "CA_Timer" || !reflect.DeepEqual(timer.TimerPaths, []dsl.TimerPath{{Duration: "P5D", Interrupting: true}}) {
+		t.Errorf("CA_Timer = %s with timer paths %+v, want one interrupting P5D path with no target", timer.NodeID, timer.TimerPaths)
+	}
+	if msg.NodeID != "CA_Message" || !reflect.DeepEqual(msg.MessagePaths, []dsl.MessagePath{{MessageName: "withdraw", Interrupting: true}}) {
+		t.Errorf("CA_Message = %s with message paths %+v, want one interrupting withdraw path with no target", msg.NodeID, msg.MessagePaths)
+	}
+	_, send := stage(expanded.Plans[0], steps[1].Sequential[0]+"/Send_Withdraw")
+	if send == nil || send.Extras["message"] != "withdraw" {
+		t.Errorf("send task = %+v, want Send_Withdraw sending withdraw", send)
+	}
+}

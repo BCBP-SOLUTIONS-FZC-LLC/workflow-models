@@ -31,3 +31,23 @@ var libraryCalls []byte
 // are CA_Eng::Process_Review@v2/Review_Task,
 // CA_Eng::Review_Check::Process_Check@v1/Check_Task, and the same under CA_Ops.
 func LibraryCalls() []byte { return bytes.Clone(libraryCalls) }
+
+// LibraryCallBoundariesFile is LibraryCallBoundaries' path inside this
+// package.
+const LibraryCallBoundariesFile = "testdata/library_call_boundaries.json"
+
+//go:embed testdata/library_call_boundaries.json
+var libraryCallBoundaries []byte
+
+// LibraryCallBoundaries is the stored compiled collaboration of a workflow,
+// "Golden Boundaries", with one lane, Engineering, running Process_Review (as
+// in LibraryCalls) twice, each call with an interrupting boundary that leads
+// straight to an end event and so has no target department:
+//
+//   - CA_Timer, with a P5D timer boundary;
+//   - then Send_Withdraw, a send task for message "withdraw";
+//   - then CA_Message, with a message boundary on "withdraw", which the send
+//     task has already delivered.
+//
+// Such a boundary ends its path: the instance completes when it fires.
+func LibraryCallBoundaries() []byte { return bytes.Clone(libraryCallBoundaries) }

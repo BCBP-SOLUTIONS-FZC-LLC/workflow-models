@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `dsltest.LibraryCallBoundaries`: a golden with an interrupting timer boundary and an interrupting message boundary on calls, each leading to an end event.
+
 ## [1.3.0-rc.1] - 2026-09-25
 
 ### Added

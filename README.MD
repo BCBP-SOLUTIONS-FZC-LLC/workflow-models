@@ -180,7 +180,7 @@ An unrecognized `StageDef.Type` value is a valid forward-compat passthrough, not
 
 `pkg/dsl` has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual` against the original — the drift tripwire. `expand_test.go` covers `ExpandCalls`, the package's only executable code; everything else in `pkg/dsl` and `pkg/enums` is a declaration. No numeric coverage gate is wired into CI.
 
-`pkg/dsl/dsltest` holds golden compiled plans, written only by Definition's golden test from its real publish and run by Execution's tests, so both services test one contract (design doc §2.7). `LibraryCalls()` is a workflow calling one library module from two lanes, with call-site assignees and a nested module.
+`pkg/dsl/dsltest` holds golden compiled plans, written only by Definition's golden test from its real publish and run by Execution's tests, so both services test one contract (design doc §2.7). `LibraryCalls()` is a workflow calling one library module from two lanes, with call-site assignees and a nested module. `LibraryCallBoundaries()` adds an interrupting timer and message boundary on calls, each leading to an end event.
 
 ## Versioning and releases
 
