@@ -16,6 +16,7 @@
    - 2.4 `ExecutionPlan` / `ExecutionStep`
    - 2.5 Branch & Step Variants
    - 2.6 `ExpandCalls`
+   - 2.7 `pkg/dsl/dsltest`: Golden Plans
 3. Package Reference: `pkg/events` (Retired)
 4. Package Reference: `pkg/enums`
 5. Scope Boundary: What's Not In This Module
@@ -39,7 +40,7 @@
 
 ## 1. Overview & Status
 
-Go 1.26, zero external dependencies. Two packages: `pkg/dsl`, `pkg/enums`. It exists to close two structural drift sources that are otherwise kept in sync by discipline, not by the compiler — one of them dormant since `pkg/events` was retired (rev 2.4; §3):
+Go 1.26, zero external dependencies. Two packages, `pkg/dsl` and `pkg/enums`, plus `pkg/dsl/dsltest`, which holds golden plans for tests (§2.7). It exists to close two structural drift sources that are otherwise kept in sync by discipline, not by the compiler — one of them dormant since `pkg/events` was retired (rev 2.4; §3):
 
 1. **The compiled-plan DSL travels as an opaque JSON string.** `DefinitionService.GetCompiledWorkflow` returns `compiled_plan_json` as a plain `string`, not a typed message. Nothing stops Definition's compiler from adding a BPMN element handler, an `ExecutionStep` variant, or a struct field without Execution ever finding out until an instance fails at runtime. Two drift bugs already exist in the codebase from this class of problem: `eventBasedGateway` silently dropped by XML parsing, and `inclusiveGateway` inconsistently handled across code and documentation.
 2. **Event payload structs are hand-mirrored against each service's own AsyncAPI spec.** Execution does this today for its 18 outbound payloads, each hand-matched against its own `api/asyncapi.yaml` by discipline alone with no compiler check between a struct and its governing schema. `workflow.template.published` is the sharp illustrative case for this risk, even though the event itself is now retired platform-wide (rev 2.4; §3): its `TemplatePublishedPayload` had to match `WorkflowTemplatePublishedPayload` in Definition's own `api/asyncapi.yaml`, Definition produced the event, and Execution consumed it for cache pre-warm (`execution_service.md` §6.2) — two independently hand-maintained copies of the same contract sitting on either side of the event bus with no compiler check between them. No event currently crosses the Definition↔Execution boundary, so this drift source is dormant, not closed: the same risk recurs unchanged the moment some future event needs to cross this boundary.
@@ -292,6 +293,16 @@ Execution: the instance-wide, node-keyed message-correlation buffer (§2.1 above
 
 Definition runs it on the plan it has just compiled, to count stages and to read tasks and departments. Execution runs it on every collaboration it decodes. Both therefore see the same node keys and IAM departments.
 
+### 2.7 `pkg/dsl/dsltest`: Golden Plans
+
+`dsltest` ships compiled collaborations exactly as Definition's publish stores them, so Definition's compiler and Execution's interpreter are tested against the same bytes rather than each against a plan it built for itself.
+
+- **`LibraryCalls() []byte`** is a workflow, `Golden`, with two lanes (Engineering and Ops, each with a catalogue `dept_id`). Each lane runs a call to library module `Process_Review` version 2: `CA_Eng`, and `CA_Ops` whose `Assignees` gives `Review_Task` a default user. `Process_Review` has no lanes; its `Review_Task` names a user and its call `Review_Check` calls `Process_Check` version 1, whose `Check_Task` names nobody, so a start request must supply that person through `override_map`. Once expanded, the module tasks' node keys are `CA_Eng::Process_Review@v2/Review_Task`, `CA_Eng::Review_Check::Process_Check@v1/Check_Task` and the same under `CA_Ops`. It carries no boundary events: Execution cannot yet run a boundary on a call correctly. The file is `testdata/library_calls.json` (`LibraryCallsFile`).
+- **Who writes it.** Only Definition's `TestGolden_LibraryCalls`, which publishes the fixture through the real compiler and library resolution. The test fails when the published plan and the golden differ; `-update-golden`, run with a Go workspace that uses a workflow-models checkout, rewrites the file. Nobody edits it by hand.
+- **Who reads it.** `dsltest`'s own test pins the facts consumers rely on after `ExpandCalls`: each call's tasks run in the caller lane's IAM department, the node keys are exact, the call-site and task defaults apply, and the nested task has nobody. Execution's tests decode, expand and run it: start refusal and `override_map` by node key, each call's tasks in the caller's department, and an end-to-end run through real Temporal.
+
+A change to the compiler's output therefore shows up as a failing Definition test, and a new golden as a changed file in workflow-models that Execution's tests run against.
+
 ---
 
 ## 3. Package Reference: `pkg/events` (Retired)
@@ -341,7 +352,7 @@ The module holds only what both Definition Service and Execution Service actuall
 
 **`platform-events`' `Envelope[T]`** is not re-exported (Appendix A #7) — a convenience neither service requires from this module.
 
-Why this matters as its own boundary, not an implementation detail: a module that quietly grows to hold "everything Execution happens to touch" stops being a compile-time-shared contract and becomes an unversioned dumping ground neither service can safely evolve independently. The module's footprint is deliberate — today it holds exactly `pkg/dsl` and `pkg/enums`'s `StageType` constants (see Revision history for how the scope narrowed to this) — not an oversight to be quietly grown back.
+Why this matters as its own boundary, not an implementation detail: a module that quietly grows to hold "everything Execution happens to touch" stops being a compile-time-shared contract and becomes an unversioned dumping ground neither service can safely evolve independently. The module's footprint is deliberate — today it holds exactly `pkg/dsl` (with its test-data package `pkg/dsl/dsltest`) and `pkg/enums`'s `StageType` constants (see Revision history for how the scope narrowed to this) — not an oversight to be quietly grown back.
 
 ---
 
@@ -408,6 +419,7 @@ One test per artifact class, run in each consuming repo's own CI — not central
 | --- | --- | --- | --- |
 | DSL round-trip | Marshal a `pkg/dsl.CompiledCollaboration` fixture → JSON → unmarshal → deep-equal the original; separately, unmarshal a real stored `compiled_plan_json` blob (from a real `workflow_version` row or a `design/Workflows/*.compiled.json` fixture) → the struct has no unexpected zero-valued required field | `workflow-definition-service`'s own test suite, and `workflow-models`'s own `pkg/dsl/roundtrip_test.go` | The compiler starts emitting a shape `pkg/dsl` doesn't have a field for, or a struct field's JSON tag changes without a corresponding compiler update |
 | `ExpandCalls` | Bindings, scoped department IDs, nested calls, call-site assignees, reference rewriting, refusals, stage budget, determinism | `workflow-models`'s own `pkg/dsl/expand_test.go` | Expansion stops producing the node keys and IAM departments both services rely on |
+| Golden plans (§2.7) | Definition's publish of the fixture equals `dsltest.LibraryCalls`; the golden decodes, expands and has the tasks, departments, defaults and paths consumers rely on; Execution runs it | Definition's `test/unit/service/golden_test.go`, `workflow-models`'s `pkg/dsl/dsltest/dsltest_test.go`, Execution's workflow tests | The compiler's output changes, or a consumer stops handling what it produces |
 | _Event round-trip / Execution decode-side sanity — retired rev 2.4 alongside `pkg/events`/`TemplatePublishedPayload` and the `workflow.template.published` event they tested (§3; see Revision history)_ | | | |
 
 This does not replace `platform-schemagov`'s own CI validate/diff/register jobs (§1) — it's an additional, narrower check that the Go representation hasn't drifted from the wire one, running alongside the existing schema-governance pipeline, not instead of it.
@@ -431,7 +443,11 @@ workflow-models/
     │   │                           MessagePath, ErrorPath, TimerPath
     │   ├── expand.go               ExpandCalls, ErrPlanTooLarge, CallScopeSeparator
     │   ├── expand_test.go          ExpandCalls behaviour (package dsl_test)
-    │   └── roundtrip_test.go       golden struct↔JSON drift test (package dsl_test)
+    │   ├── roundtrip_test.go       golden struct↔JSON drift test (package dsl_test)
+    │   └── dsltest/
+    │       ├── dsltest.go          LibraryCalls, LibraryCallsFile: golden plans (§2.7)
+    │       ├── dsltest_test.go     what consumers rely on in each golden
+    │       └── testdata/           golden JSON, written only by Definition's golden test
     └── enums/
         └── stage_type.go           StageType constants
 ```
@@ -537,3 +553,4 @@ One row per §12 gap — Blocker (must exist before the `v1.0.0` tag) or Deferre
 | 2.5 | 2026-09-10 | The five inbound IAM-owned payload names in §5 corrected from dotted-lowercase to PascalCase (`DelegationStarted`, `DelegationEnded`, `TenantStateChanged`, `UserDeleted`, `UserAvailabilityChanged`), matching IAM's confirmed platform-wide convention and `execution_service.md` rev 1.42. Documentation-only — these payloads are Execution-side and were never in this module. |
 | 2.6 | 2026-09-10 | The 2 dotted-lowercase `workflow.*` citations renamed to PascalCase, following `execution_service.md` rev 1.45. These are Execution-side wire types this module does not carry — `pkg/events` was removed in rev 2.4 — so this is a citation fix only. |
 | 2.7 | 2026-09-24 | **Called processes are referenced, not inlined** (§2.4, §2.5, §2.6). New `ExecutionStep.CallPlan` / `CallPlanStep`: a `callActivity` names a plan of the collaboration, compiled once, and carries its department bindings, call-site assignees and boundary paths. New `ExpandCalls`, the one shared, pure expansion both services run: it turns each call into the `SubWorkflowStep` Execution already interprets, with call-scoped departments (`<NodeID>::<department>`), so two calls of one module give distinct tasks and each bound department carries the caller's IAM department. §2.1 `Plans` includes called processes. §9 and §10 list the new tests and file. The in-repo copy was re-synced from the design copy first; it lacked revs 2.5–2.6. `ExpandCalls` refuses empty and colliding department IDs, bindings to another call's departments and unknown assignee tasks, and counts calls toward its budget. §2.2's `IAMDepartmentID` note and §6.1 were stale and now state the shipped behaviour. |
+| 2.8 | 2026-09-25 | **Golden plans** (§2.7, §9, §10). New package `pkg/dsl/dsltest` with `LibraryCalls`: the compiled collaboration Definition's publish stores for a workflow calling one library module from two lanes, one call with message and timer boundaries and one with call-site assignees, the module calling a nested module whose task names nobody. No boundary events, which Execution cannot yet run on a call. Definition's golden test writes it and fails when its publish differs; `dsltest`'s own test pins what consumers rely on after `ExpandCalls`; Execution's tests run it. Closes the cross-repo fixture left open when publish began storing a collaboration (definition LLD rev 1.19). |

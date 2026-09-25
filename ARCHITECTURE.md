@@ -2,7 +2,7 @@
 
 `workflow-models` is a shared Go module, not a service — it has no layers,
 no adapters, and no runtime of its own. This document describes the shape
-of its two packages, how they relate to each other, and how the two
+of its two packages (plus `pkg/dsl/dsltest`, golden plans for tests), how they relate to each other, and how the two
 consuming services (Definition and Execution) use them. For the full
 field-level design rationale, see the design doc `workflow_models_lib.md`
 (also kept in-repo at `docs/lld/workflow_models_lib.md`, content-identical
@@ -70,6 +70,11 @@ Service's compiler enforces and its modeler-facing discovery endpoint serves
 fails the moment a struct or JSON tag changes shape without the fixture
 being updated (design doc §9). `pkg/enums` has no test file; it holds only
 constants.
+
+`pkg/dsl/dsltest` ships golden compiled plans that Definition's publish
+produces and Execution's tests run (design doc §2.7). Definition's golden test
+writes them and fails when its output changes; `dsltest_test.go` pins what
+consumers rely on after `ExpandCalls`. Never edit a golden by hand.
 
 ## Coverage note
 

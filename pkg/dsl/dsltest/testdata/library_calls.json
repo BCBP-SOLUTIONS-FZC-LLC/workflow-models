@@ -1,0 +1,117 @@
+{
+  "main_plan": "Golden",
+  "plans": [
+    {
+      "name": "Golden",
+      "task_queue": "wf-queue-default",
+      "departments": [
+        {
+          "id": "Engineering",
+          "label": "Engineering",
+          "iam_department_id": "2200a5ae-2466-54f7-a1d8-243106e05705",
+          "stages": null
+        },
+        {
+          "id": "Ops",
+          "label": "Ops",
+          "iam_department_id": "92fd92cf-4b2c-58dc-bf98-f3d0af729876",
+          "stages": null
+        }
+      ],
+      "execution": {
+        "steps": [
+          {
+            "call_plan": {
+              "node_id": "CA_Eng",
+              "name": "Review in Engineering",
+              "plan": "Process_Review@v2",
+              "departments": {
+                "Process_Review@v2": "Engineering"
+              }
+            }
+          },
+          {
+            "call_plan": {
+              "node_id": "CA_Ops",
+              "name": "Review in Ops",
+              "plan": "Process_Review@v2",
+              "departments": {
+                "Process_Review@v2": "Ops"
+              },
+              "assignees": {
+                "Review_Task": "018f2d3c-0000-7000-8000-0000000000b2"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Process_Check@v1",
+      "departments": [
+        {
+          "id": "Process_Check@v1",
+          "label": "Process_Check@v1",
+          "stages": [
+            {
+              "type": "review",
+              "activity": "ReviewActivity",
+              "node_id": "Check_Task",
+              "role": "checker"
+            }
+          ]
+        }
+      ],
+      "execution": {
+        "steps": [
+          {
+            "sequential": [
+              "Process_Check@v1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Process_Review@v2",
+      "departments": [
+        {
+          "id": "Process_Review@v2",
+          "label": "Process_Review@v2",
+          "stages": [
+            {
+              "type": "review",
+              "activity": "ReviewActivity",
+              "node_id": "Review_Task",
+              "role": "reviewer",
+              "default_assignees": [
+                "550e8400-e29b-41d4-a716-446655440000"
+              ]
+            }
+          ]
+        }
+      ],
+      "execution": {
+        "steps": [
+          {
+            "sequential": [
+              "Process_Review@v2"
+            ]
+          },
+          {
+            "call_plan": {
+              "node_id": "Review_Check",
+              "name": "Check",
+              "plan": "Process_Check@v1",
+              "departments": {
+                "Process_Check@v1": "Process_Review@v2"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "messages": [],
+  "schema_version": 1
+}
