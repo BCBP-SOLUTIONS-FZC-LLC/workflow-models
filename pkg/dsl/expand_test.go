@@ -212,6 +212,56 @@ func TestExpandCalls_CallSiteAssigneesReplaceTheModuleDefault(t *testing.T) {
 	}
 }
 
+// outerModule calls review@v1 as CA_9 from inside a parallel branch, giving
+// Review_Prepare its own call-site default.
+func outerModule() *dsl.CompiledPlan {
+	inner := callStep("CA_9", "review@v1", map[string]string{"Sender": "Doer"})
+	inner.CallPlan.Assignees = map[string]string{"Review_Prepare": "u-outer-call"}
+	return &dsl.CompiledPlan{
+		Name:        "outer@v2",
+		Departments: []dsl.DepartmentDef{{ID: "Doer", Label: "Doer", Stages: []dsl.StageDef{stage("Outer_T1")}}},
+		Execution: dsl.ExecutionPlan{Steps: []dsl.ExecutionStep{
+			{Parallel: []dsl.ParallelBranch{{DeptID: "Doer", Steps: []dsl.ExecutionStep{seq("Doer"), inner}}}},
+		}},
+	}
+}
+
+// TestExpandCalls_AssigneesReachANestedModuleByPath pins that a call names a
+// user for any task beneath it, by the path of calls to it, and that the
+// outermost call's entry wins over an inner call's and the task's own.
+func TestExpandCalls_AssigneesReachANestedModuleByPath(t *testing.T) {
+	call := callStep("CA_1", "outer@v2", map[string]string{"Doer": "Engineering"})
+	call.CallPlan.Assignees = map[string]string{"Outer_T1": "u-top-outer", "CA_9::Review_Prepare": "u-top", "CA_9::Review_Check": "u-top-check"}
+	main := expand(t, collab(mainPlan(call), outerModule(), reviewModule()))
+
+	for id, want := range map[string]string{"CA_1::Doer": "u-top-outer", "CA_1::CA_9::Sender": "u-top", "CA_1::CA_9::Legal": "u-top-check"} {
+		if got := dept(t, main, id).Stages[0].DefaultAssignees; !reflect.DeepEqual(got, []string{want}) {
+			t.Errorf("%s assignees = %v, want [%s]", id, got, want)
+		}
+	}
+
+	call.CallPlan.Assignees = nil
+	main = expand(t, collab(mainPlan(call), outerModule(), reviewModule()))
+	if got := dept(t, main, "CA_1::CA_9::Sender").Stages[0].DefaultAssignees; !reflect.DeepEqual(got, []string{"u-outer-call"}) {
+		t.Errorf("without a top-level entry, Review_Prepare assignees = %v, want the inner call's [u-outer-call]", got)
+	}
+}
+
+func TestExpandCalls_RefusesAnAssigneePathThatLeadsNowhere(t *testing.T) {
+	for key, want := range map[string]string{
+		"CA_X::Review_Prepare": "CA_X",
+		"CA_9::Nope":           "Nope",
+		"CA_9::CA_Y::Nope":     "CA_Y",
+	} {
+		call := callStep("CA_1", "outer@v2", map[string]string{"Doer": "Engineering"})
+		call.CallPlan.Assignees = map[string]string{key: "u1"}
+		_, err := dsl.ExpandCalls(collab(mainPlan(call), outerModule(), reviewModule()), 1000)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Assignees key %q: err = %v, want an error naming %q", key, err, want)
+		}
+	}
+}
+
 func TestExpandCalls_RewritesEveryDepartmentReference(t *testing.T) {
 	module := &dsl.CompiledPlan{
 		Name: "branchy@v1",
@@ -432,4 +482,83 @@ func TestExpandCalls_IsDeterministicAndLeavesItsInputAlone(t *testing.T) {
 	if mustJSON(t, in) != before {
 		t.Error("ExpandCalls modified its input")
 	}
+}
+
+// boundaryModule has one department whose stage and steps carry every kind of
+// boundary, each ending its path rather than moving to a department.
+func boundaryModule() *dsl.CompiledPlan {
+	return &dsl.CompiledPlan{
+		Name: "ender@v1",
+		Departments: []dsl.DepartmentDef{{ID: "A", Label: "A", Stages: []dsl.StageDef{{
+			Type: "approve", NodeID: "A_T1",
+			BoundaryTimer:   &dsl.BoundaryTimer{Duration: "P1D", Interrupting: true, Terminates: true},
+			BoundaryMessage: &dsl.MessagePath{MessageName: "stop", Interrupting: true, Terminates: true},
+		}}}},
+		Execution: dsl.ExecutionPlan{Steps: []dsl.ExecutionStep{
+			{SubWorkflow: &dsl.SubWorkflowStep{
+				NodeID:       "SP_1",
+				Plan:         dsl.ExecutionPlan{Steps: []dsl.ExecutionStep{seq("A")}},
+				ErrorPaths:   []dsl.ErrorPath{{ErrorCode: "E", Terminates: true}},
+				TimerPaths:   []dsl.TimerPath{{Duration: "PT2H", Interrupting: true, Terminates: true}},
+				MessagePaths: []dsl.MessagePath{{MessageName: "m", Interrupting: true, Terminates: true}},
+			}},
+		}},
+	}
+}
+
+func TestExpandCalls_TerminatingBoundariesStayUnscoped(t *testing.T) {
+	main := expand(t, collab(mainPlan(callStep("CA_1", "ender@v1", map[string]string{"A": "Engineering"})), boundaryModule()))
+
+	a := dept(t, main, "CA_1::A").Stages[0]
+	if !a.BoundaryTimer.Terminates || a.BoundaryTimer.TargetDept != "" || !a.BoundaryMessage.Terminates || a.BoundaryMessage.TargetDept != "" {
+		t.Errorf("stage boundaries = %+v, %+v, want terminating with no target", a.BoundaryTimer, a.BoundaryMessage)
+	}
+	inner := subWorkflow(t, subWorkflow(t, main.Execution.Steps[0]).Plan.Steps[0])
+	if !inner.ErrorPaths[0].Terminates || !inner.TimerPaths[0].Terminates || !inner.MessagePaths[0].Terminates ||
+		inner.ErrorPaths[0].TargetDept+inner.TimerPaths[0].TargetDept+inner.MessagePaths[0].TargetDept != "" {
+		t.Errorf("sub_workflow paths = %+v %+v %+v, want terminating with no target", inner.ErrorPaths, inner.TimerPaths, inner.MessagePaths)
+	}
+}
+
+// TestExpandCalls_RefusesABoundaryThatNeitherTargetsNorTerminates pins that
+// an empty target is never read as "ends the path": a boundary names a
+// department or says it terminates, never both and never neither.
+func TestExpandCalls_RefusesABoundaryThatNeitherTargetsNorTerminates(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(p *dsl.CompiledPlan)
+		want   string
+	}{
+		{"stage timer", func(p *dsl.CompiledPlan) { p.Departments[0].Stages[0].BoundaryTimer.Terminates = false }, "A_T1"},
+		{"stage message", func(p *dsl.CompiledPlan) { p.Departments[0].Stages[0].BoundaryMessage.Terminates = false }, "A_T1"},
+		{"stage timer with both", func(p *dsl.CompiledPlan) { p.Departments[0].Stages[0].BoundaryTimer.TargetDept = "A" }, "A_T1"},
+		{"sub_workflow error path", func(p *dsl.CompiledPlan) { p.Execution.Steps[0].SubWorkflow.ErrorPaths[0].Terminates = false }, "SP_1"},
+		{"sub_workflow timer path", func(p *dsl.CompiledPlan) { p.Execution.Steps[0].SubWorkflow.TimerPaths[0].Terminates = false }, "SP_1"},
+		{"sub_workflow message path", func(p *dsl.CompiledPlan) { p.Execution.Steps[0].SubWorkflow.MessagePaths[0].Terminates = false }, "SP_1"},
+		{"call timer path", func(p *dsl.CompiledPlan) {
+			p.Execution.Steps = append(p.Execution.Steps, callStep("CA_X", "review@v1", map[string]string{"Sender": "A"}))
+			p.Execution.Steps[1].CallPlan.TimerPaths = []dsl.TimerPath{{Duration: "P1D", Interrupting: true}}
+		}, "CA_X"},
+		{"step message path", func(p *dsl.CompiledPlan) {
+			p.Execution.Steps = append(p.Execution.Steps, dsl.ExecutionStep{Sequential: []string{"A"}, MessagePaths: []dsl.MessagePath{{MessageName: "n"}}})
+		}, "message"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			module := boundaryModule()
+			tc.mutate(module)
+			_, err := dsl.ExpandCalls(collab(mainPlan(callStep("CA_1", "ender@v1", map[string]string{"A": "Engineering"})), module, reviewModule()), 1000)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "ender@v1") {
+				t.Errorf("err = %v, want an error naming plan ender@v1 and %q", err, tc.want)
+			}
+		})
+	}
+	t.Run("in the main plan", func(t *testing.T) {
+		main := mainPlan(seq("Engineering"))
+		main.Departments[0].Stages[0].BoundaryTimer = &dsl.BoundaryTimer{Duration: "P1D", Interrupting: true}
+		_, err := dsl.ExpandCalls(collab(main), 1000)
+		if err == nil || !strings.Contains(err.Error(), "Main_T1") {
+			t.Errorf("err = %v, want an error naming Main_T1", err)
+		}
+	})
 }

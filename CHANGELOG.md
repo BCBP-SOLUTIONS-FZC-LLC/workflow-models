@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `dsltest.LibraryCallBoundaries`: a golden with an interrupting timer boundary and an interrupting message boundary on calls, each leading to an end event.
+- `Terminates` on `BoundaryTimer`, `MessagePath`, `ErrorPath` and `TimerPath`: the boundary's path ends at an end event. Every boundary sets exactly one of `TargetDept` and `Terminates`.
+- `CallPlanStep.Assignees` keys may be a path of calls to a task further down (`Review_Check::Check_Task`); the outermost call's entry wins.
+
+### Changed
+
+- `ExpandCalls` refuses a boundary that sets both or neither of `TargetDept` and `Terminates`, and an `Assignees` path through a call the plan does not make. An empty target no longer stands for the end of a path.
+- The goldens are re-made by Definition's publish: a laneless module's node keys name it by process id without its version (`CA_Eng::Process_Review/Review_Task`), every task has a default user, the module keeps its own message, and boundaries to an end event terminate.
 
 ## [1.3.0-rc.1] - 2026-09-25
 

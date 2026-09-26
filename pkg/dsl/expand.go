@@ -19,7 +19,7 @@ var ErrPlanTooLarge = errors.New("dsl: expanded plan exceeds the stage budget")
 
 // ExpandCalls returns a copy of c in which every CallPlan step is replaced by
 // the SubWorkflowStep it stands for, with the called plan's departments cloned
-// into the calling plan under call-scoped IDs (workflow_models_lib.md §2.6).
+// into the calling plan under call-scoped IDs (workflow-models LLD §2.6).
 // A maxStages of zero or less disables the budget.
 func ExpandCalls(c *CompiledCollaboration, maxStages int) (*CompiledCollaboration, error) {
 	if c == nil {
@@ -32,6 +32,9 @@ func ExpandCalls(c *CompiledCollaboration, maxStages int) (*CompiledCollaboratio
 		}
 		if _, dup := originals[p.Name]; dup {
 			return nil, fmt.Errorf("dsl: two plans are named %q", p.Name)
+		}
+		if err := checkBoundaries(p); err != nil {
+			return nil, err
 		}
 		originals[p.Name] = p
 	}
@@ -51,7 +54,7 @@ func ExpandCalls(c *CompiledCollaboration, maxStages int) (*CompiledCollaboratio
 				return nil, err
 			}
 		}
-		steps, err := e.steps(p.Execution.Steps, "", own, []string{p.Name})
+		steps, err := e.steps(p.Execution.Steps, "", own, []string{p.Name}, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -80,8 +83,9 @@ func (e *expander) count(n int) error {
 // steps rewrites steps in place. They belong to a plan whose department IDs
 // become root IDs by adding prefix; local holds those root IDs, the only
 // departments a call made here may bind to; chain names the plans being
-// expanded.
-func (e *expander) steps(steps []ExecutionStep, prefix string, local map[string]bool, chain []string) ([]ExecutionStep, error) {
+// expanded; down holds, by a call's NodeID, the assignees an outer call names
+// for that call's tasks.
+func (e *expander) steps(steps []ExecutionStep, prefix string, local map[string]bool, chain []string, down map[string]map[string]string) ([]ExecutionStep, error) {
 	for i := range steps {
 		st := &steps[i]
 		for j := range st.Sequential {
@@ -90,7 +94,7 @@ func (e *expander) steps(steps []ExecutionStep, prefix string, local map[string]
 		for j := range st.Parallel {
 			b := &st.Parallel[j]
 			b.DeptID = scoped(prefix, b.DeptID)
-			nested, err := e.steps(b.Steps, prefix, local, chain)
+			nested, err := e.steps(b.Steps, prefix, local, chain, down)
 			if err != nil {
 				return nil, err
 			}
@@ -102,7 +106,7 @@ func (e *expander) steps(steps []ExecutionStep, prefix string, local map[string]
 			b.RevertToDept = scoped(prefix, b.RevertToDept)
 		}
 		if sw := st.SubWorkflow; sw != nil {
-			nested, err := e.steps(sw.Plan.Steps, prefix, local, chain)
+			nested, err := e.steps(sw.Plan.Steps, prefix, local, chain, down)
 			if err != nil {
 				return nil, err
 			}
@@ -111,7 +115,7 @@ func (e *expander) steps(steps []ExecutionStep, prefix string, local map[string]
 		}
 		scopePaths(prefix, nil, nil, st.MessagePaths)
 		if st.CallPlan != nil {
-			sw, err := e.call(st.CallPlan, prefix, local, chain)
+			sw, err := e.call(st.CallPlan, prefix, local, chain, down[st.CallPlan.NodeID])
 			if err != nil {
 				return nil, err
 			}
@@ -122,8 +126,9 @@ func (e *expander) steps(steps []ExecutionStep, prefix string, local map[string]
 }
 
 // call expands one CallPlan made from a plan whose departments carry
-// callerPrefix in the root plan and are listed in local.
-func (e *expander) call(cp *CallPlanStep, callerPrefix string, local map[string]bool, chain []string) (*SubWorkflowStep, error) {
+// callerPrefix in the root plan and are listed in local. inherited is what
+// outer calls name for this call's tasks, and wins over cp's own Assignees.
+func (e *expander) call(cp *CallPlanStep, callerPrefix string, local map[string]bool, chain []string, inherited map[string]string) (*SubWorkflowStep, error) {
 	original, ok := e.plans[cp.Plan]
 	if !ok {
 		return nil, fmt.Errorf("dsl: call %q names plan %q, which is not in the collaboration", cp.NodeID, cp.Plan)
@@ -135,7 +140,8 @@ func (e *expander) call(cp *CallPlanStep, callerPrefix string, local map[string]
 	if err != nil {
 		return nil, err
 	}
-	if err := checkCalled(cp, called); err != nil {
+	direct, down := splitAssignees(cp.Assignees, inherited)
+	if err := checkCalled(cp, called, direct, down); err != nil {
 		return nil, err
 	}
 	bound, err := e.bindings(cp, called, callerPrefix, local)
@@ -150,12 +156,12 @@ func (e *expander) call(cp *CallPlanStep, callerPrefix string, local map[string]
 	calledLocal := make(map[string]bool, len(called.Departments))
 	for _, d := range called.Departments {
 		calledLocal[prefix+d.ID] = true
-		if err := e.adopt(d, prefix, bound, cp.Assignees); err != nil {
+		if err := e.adopt(d, prefix, bound, direct); err != nil {
 			return nil, err
 		}
 	}
 
-	steps, err := e.steps(called.Execution.Steps, prefix, calledLocal, append(slices.Clone(chain), cp.Plan))
+	steps, err := e.steps(called.Execution.Steps, prefix, calledLocal, append(slices.Clone(chain), cp.Plan), down)
 	if err != nil {
 		return nil, err
 	}
@@ -200,9 +206,34 @@ func (e *expander) adopt(d DepartmentDef, prefix string, bound map[string]Depart
 	return nil
 }
 
+// splitAssignees merges what outer calls name (inherited) over a call's own
+// Assignees, then splits the keys into the called plan's own task IDs and, by
+// the NodeID of the inner call they lead through, paths to tasks further down.
+func splitAssignees(own, inherited map[string]string) (direct map[string]string, down map[string]map[string]string) {
+	merged := maps.Clone(own)
+	if merged == nil {
+		merged = map[string]string{}
+	}
+	maps.Copy(merged, inherited)
+	direct, down = map[string]string{}, map[string]map[string]string{}
+	for key, user := range merged {
+		call, rest, nested := strings.Cut(key, CallScopeSeparator)
+		if !nested {
+			direct[key] = user
+			continue
+		}
+		if down[call] == nil {
+			down[call] = map[string]string{}
+		}
+		down[call][rest] = user
+	}
+	return direct, down
+}
+
 // checkCalled refuses what a call cannot express against the called plan: a
-// department with no ID to scope, or an assignee for a task it lacks.
-func checkCalled(cp *CallPlanStep, called *CompiledPlan) error {
+// department with no ID to scope, an assignee for a task it lacks, or a path
+// through a call it does not make.
+func checkCalled(cp *CallPlanStep, called *CompiledPlan, direct map[string]string, down map[string]map[string]string) error {
 	tasks := map[string]bool{}
 	for _, d := range called.Departments {
 		if d.ID == "" {
@@ -212,12 +243,33 @@ func checkCalled(cp *CallPlanStep, called *CompiledPlan) error {
 			tasks[s.NodeID] = true
 		}
 	}
-	for _, taskID := range slices.Sorted(maps.Keys(cp.Assignees)) {
+	for _, taskID := range slices.Sorted(maps.Keys(direct)) {
 		if !tasks[taskID] {
 			return fmt.Errorf("dsl: call %q assigns task %q, which plan %q does not have", cp.NodeID, taskID, cp.Plan)
 		}
 	}
+	calls := callNodeIDs(called.Execution.Steps, map[string]bool{})
+	for _, inner := range slices.Sorted(maps.Keys(down)) {
+		if !calls[inner] {
+			return fmt.Errorf("dsl: call %q assigns tasks through call %q, which plan %q does not make", cp.NodeID, inner, cp.Plan)
+		}
+	}
 	return nil
+}
+
+func callNodeIDs(steps []ExecutionStep, into map[string]bool) map[string]bool {
+	for _, st := range steps {
+		if st.CallPlan != nil {
+			into[st.CallPlan.NodeID] = true
+		}
+		for _, b := range st.Parallel {
+			callNodeIDs(b.Steps, into)
+		}
+		if st.SubWorkflow != nil {
+			callNodeIDs(st.SubWorkflow.Plan.Steps, into)
+		}
+	}
+	return into
 }
 
 // bindings resolves cp.Departments to the calling departments, already in the
@@ -236,6 +288,51 @@ func (e *expander) bindings(cp *CallPlanStep, called *CompiledPlan, callerPrefix
 		bound[calledID] = e.root.Departments[i]
 	}
 	return bound, nil
+}
+
+// checkBoundaries refuses a boundary that neither moves to a department nor
+// terminates, or does both, so an empty target is never read as either.
+func checkBoundaries(p *CompiledPlan) error {
+	bad := func(target string, terminates bool) bool { return (target == "") != terminates }
+	for _, d := range p.Departments {
+		for _, s := range d.Stages {
+			if (s.BoundaryTimer != nil && bad(s.BoundaryTimer.TargetDept, s.BoundaryTimer.Terminates)) ||
+				(s.BoundaryMessage != nil && bad(s.BoundaryMessage.TargetDept, s.BoundaryMessage.Terminates)) {
+				return fmt.Errorf("dsl: plan %q: a boundary on stage %q must name a target department or terminate, not both or neither", p.Name, s.NodeID)
+			}
+		}
+	}
+	return checkStepBoundaries(p.Name, p.Execution.Steps, bad)
+}
+
+func checkStepBoundaries(plan string, steps []ExecutionStep, bad func(string, bool) bool) error {
+	pathsOK := func(errs []ErrorPath, timers []TimerPath, msgs []MessagePath) bool {
+		return !slices.ContainsFunc(errs, func(x ErrorPath) bool { return bad(x.TargetDept, x.Terminates) }) &&
+			!slices.ContainsFunc(timers, func(x TimerPath) bool { return bad(x.TargetDept, x.Terminates) }) &&
+			!slices.ContainsFunc(msgs, func(x MessagePath) bool { return bad(x.TargetDept, x.Terminates) })
+	}
+	for _, st := range steps {
+		if !pathsOK(nil, nil, st.MessagePaths) {
+			return fmt.Errorf("dsl: plan %q: a message boundary on step %v must name a target department or terminate, not both or neither", plan, st.Sequential)
+		}
+		if sw := st.SubWorkflow; sw != nil {
+			if !pathsOK(sw.ErrorPaths, sw.TimerPaths, sw.MessagePaths) {
+				return fmt.Errorf("dsl: plan %q: a boundary on sub_workflow %q must name a target department or terminate, not both or neither", plan, sw.NodeID)
+			}
+			if err := checkStepBoundaries(plan, sw.Plan.Steps, bad); err != nil {
+				return err
+			}
+		}
+		if cp := st.CallPlan; cp != nil && !pathsOK(cp.ErrorPaths, cp.TimerPaths, cp.MessagePaths) {
+			return fmt.Errorf("dsl: plan %q: a boundary on call %q must name a target department or terminate, not both or neither", plan, cp.NodeID)
+		}
+		for _, b := range st.Parallel {
+			if err := checkStepBoundaries(plan, b.Steps, bad); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func scoped(prefix, deptID string) string {

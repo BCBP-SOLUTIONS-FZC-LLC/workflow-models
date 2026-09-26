@@ -30,12 +30,16 @@
               "name": "Review, due in five days",
               "plan": "Process_Review@v2",
               "departments": {
-                "Process_Review@v2": "Engineering"
+                "Process_Review": "Engineering"
+              },
+              "assignees": {
+                "Review_Check::Check_Task": "018f2d3c-0000-7000-8000-0000000000c1"
               },
               "timer_paths": [
                 {
                   "duration": "P5D",
-                  "interrupting": true
+                  "interrupting": true,
+                  "terminates": true
                 }
               ]
             }
@@ -51,12 +55,16 @@
               "name": "Review, unless withdrawn",
               "plan": "Process_Review@v2",
               "departments": {
-                "Process_Review@v2": "Engineering"
+                "Process_Review": "Engineering"
+              },
+              "assignees": {
+                "Review_Check::Check_Task": "018f2d3c-0000-7000-8000-0000000000c1"
               },
               "message_paths": [
                 {
                   "message_name": "withdraw",
-                  "interrupting": true
+                  "interrupting": true,
+                  "terminates": true
                 }
               ]
             }
@@ -68,8 +76,8 @@
       "name": "Process_Check@v1",
       "departments": [
         {
-          "id": "Process_Check@v1",
-          "label": "Process_Check@v1",
+          "id": "Process_Check",
+          "label": "Process_Check",
           "stages": [
             {
               "type": "review",
@@ -84,7 +92,7 @@
         "steps": [
           {
             "sequential": [
-              "Process_Check@v1"
+              "Process_Check"
             ]
           }
         ]
@@ -94,8 +102,8 @@
       "name": "Process_Review@v2",
       "departments": [
         {
-          "id": "Process_Review@v2",
-          "label": "Process_Review@v2",
+          "id": "Process_Review",
+          "label": "Process_Review",
           "stages": [
             {
               "type": "review",
@@ -103,8 +111,13 @@
               "node_id": "Review_Task",
               "role": "reviewer",
               "default_assignees": [
-                "550e8400-e29b-41d4-a716-446655440000"
-              ]
+                "018f2d3c-0000-7000-8000-0000000000a1"
+              ],
+              "boundary_message": {
+                "message_name": "review-recalled",
+                "interrupting": true,
+                "terminates": true
+              }
             }
           ]
         }
@@ -113,7 +126,7 @@
         "steps": [
           {
             "sequential": [
-              "Process_Review@v2"
+              "Process_Review"
             ]
           },
           {
@@ -122,7 +135,7 @@
               "name": "Check",
               "plan": "Process_Check@v1",
               "departments": {
-                "Process_Check@v1": "Process_Review@v2"
+                "Process_Check": "Process_Review"
               }
             }
           }

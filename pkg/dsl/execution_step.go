@@ -28,6 +28,7 @@ type MessagePath struct {
 	MessageName  string `json:"message_name"`
 	Interrupting bool   `json:"interrupting"`
 	TargetDept   string `json:"target_dept,omitempty"`
+	Terminates   bool   `json:"terminates,omitempty"`
 }
 
 // IOMapping carries variable input/output declarations: on an ExecutionStep
@@ -115,6 +116,7 @@ type ErrorPath struct {
 	ErrorCode    string `json:"error_code,omitempty"`
 	ShortCircuit bool   `json:"short_circuit"`
 	TargetDept   string `json:"target_dept,omitempty"`
+	Terminates   bool   `json:"terminates,omitempty"`
 }
 
 // TimerPath is a timer-boundary-event branch attached to a SubWorkflowStep.
@@ -122,4 +124,5 @@ type TimerPath struct {
 	Duration     string `json:"duration"`
 	Interrupting bool   `json:"interrupting"`
 	TargetDept   string `json:"target_dept,omitempty"`
+	Terminates   bool   `json:"terminates,omitempty"`
 }

@@ -112,7 +112,7 @@ func TestCompiledCollaboration_RoundTrip(t *testing.T) {
 								Outputs: []dsl.IOVar{{Source: "=result", Target: "outcome"}},
 							},
 							Extras:       map[string]string{"exec.priority": "high"},
-							MessagePaths: []dsl.MessagePath{{MessageName: "notify", Interrupting: false}},
+							MessagePaths: []dsl.MessagePath{{MessageName: "notify", Interrupting: false, Terminates: true}},
 						},
 						{
 							CallPlan: &dsl.CallPlanStep{
@@ -121,8 +121,8 @@ func TestCompiledCollaboration_RoundTrip(t *testing.T) {
 								Plan:         "prepare_response@v3",
 								Departments:  map[string]string{"Sender": "Bid-No-Bid Review/Tender Business"},
 								Assignees:    map[string]string{"Task_prepare": "018e1f2a-0000-7000-8000-000000000021"},
-								ErrorPaths:   []dsl.ErrorPath{{ErrorCode: "E_REJECT", ShortCircuit: true, TargetDept: "escalation"}},
-								TimerPaths:   []dsl.TimerPath{{Duration: "P5D", Interrupting: true, TargetDept: "escalation"}},
+								ErrorPaths:   []dsl.ErrorPath{{ErrorCode: "E_REJECT", ShortCircuit: true, TargetDept: "escalation"}, {Terminates: true}},
+								TimerPaths:   []dsl.TimerPath{{Duration: "P5D", Interrupting: true, TargetDept: "escalation"}, {Duration: "P9D", Interrupting: true, Terminates: true}},
 								MessagePaths: []dsl.MessagePath{{MessageName: "withdraw", Interrupting: true, TargetDept: "ops"}},
 							},
 						},

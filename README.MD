@@ -139,21 +139,21 @@ CompiledCollaboration                 (root artifact)
 | `VisualElementDef` | `Kind`, `ID`, `Name,omitempty` |
 | `DepartmentDef` | `ID`, `Label`, `IAMDepartmentID string,omitempty`, `Ignore bool,omitempty`, `Props map[string]string,omitempty`, `Stages []StageDef` |
 | `StageDef` | `Type string` (holds `enums.StageType*` values), `Activity`, `NodeID,omitempty`, `Role`, `DefaultAssignees []string,omitempty`, `DueDate,omitempty`, `FollowUpDate,omitempty`, `BoundaryTimer *BoundaryTimer,omitempty`, `BoundaryMessage *MessagePath,omitempty`, `EngineNote,omitempty`, `Extras map[string]string,omitempty`, `IsZeebeUserTask bool,omitempty`, `ConnectorType string,omitempty`, `IOMapping *IOMapping,omitempty` |
-| `BoundaryTimer` | `Duration`, `Interrupting bool`, `TargetDept,omitempty` |
+| `BoundaryTimer` | `Duration`, `Interrupting bool`, `TargetDept,omitempty`, `Terminates bool,omitempty` |
 | `ExecutionPlan` | `Steps []ExecutionStep` |
 | `ExecutionStep` | `Sequential []string,omitempty`, `Parallel []ParallelBranch,omitempty`, `Exclusive []ExclusiveBranch,omitempty`, `SubWorkflow *SubWorkflowStep,omitempty`, `CallPool *CallPoolStep,omitempty`, `CallPlan *CallPlanStep,omitempty`, `IOMapping *IOMapping,omitempty`, `Extras map[string]string,omitempty`, `MessagePaths []MessagePath,omitempty` |
-| `MessagePath` | `MessageName`, `Interrupting bool`, `TargetDept,omitempty` |
+| `MessagePath` | `MessageName`, `Interrupting bool`, `TargetDept,omitempty`, `Terminates bool,omitempty` |
 | `IOMapping` | `Inputs []IOVar,omitempty`, `Outputs []IOVar,omitempty` |
 | `IOVar` | `Source`, `Target` |
 | `ParallelBranch` | `DeptID`, `Steps []ExecutionStep` (recursive) |
 | `ExclusiveBranch` | `Target,omitempty`, `TargetStage,omitempty`, `TargetNodeID,omitempty`, `TargetName,omitempty`, `ConditionExpression` (no omitempty), `Terminates bool,omitempty`, `RevertToDept/RevertToStage/RevertToNodeID/RevertToName,omitempty` |
 | `SubWorkflowStep` | `NodeID,omitempty`, `Name`, `Plan ExecutionPlan` (recursive), `ErrorPaths []ErrorPath,omitempty`, `TimerPaths []TimerPath,omitempty`, `MessagePaths []MessagePath,omitempty` |
-| `ErrorPath` | `ErrorCode,omitempty`, `ShortCircuit bool` (no omitempty), `TargetDept,omitempty` |
-| `TimerPath` | `Duration`, `Interrupting bool`, `TargetDept,omitempty` |
+| `ErrorPath` | `ErrorCode,omitempty`, `ShortCircuit bool` (no omitempty), `TargetDept,omitempty`, `Terminates bool,omitempty` |
+| `TimerPath` | `Duration`, `Interrupting bool`, `TargetDept,omitempty`, `Terminates bool,omitempty` |
 | `CallPoolStep` | `Pool` |
 | `CallPlanStep` | `NodeID`, `Name,omitempty`, `Plan`, `Departments map[string]string,omitempty`, `Assignees map[string]string,omitempty`, `ErrorPaths`/`TimerPaths`/`MessagePaths,omitempty` |
 
-`ExpandCalls(c, maxStages)` returns a copy of a collaboration with every `CallPlan` step replaced by the `SubWorkflowStep` Execution runs, and the called plan's departments cloned into the caller as `<NodeID>::<department>`, bound to the caller's IAM departments. Both services run it, so they agree on node keys. `ErrPlanTooLarge` reports a plan over `maxStages` stages after expansion. See the design doc §2.6.
+`ExpandCalls(c, maxStages)` returns a copy of a collaboration with every `CallPlan` step replaced by the `SubWorkflowStep` Execution runs, and the called plan's departments cloned into the caller as `<NodeID>::<department>`, bound to the caller's IAM departments. Both services run it, so they agree on node keys. A call's `Assignees` key names a task of the called plan, or a path of calls to one further down (`Review_Check::Check_Task`), the outermost call's entry winning. Every boundary sets exactly one of `TargetDept` and `Terminates`, and `ExpandCalls` refuses one that does not. `ErrPlanTooLarge` reports a plan over `maxStages` stages after expansion. See the design doc §2.6.
 
 ## Package reference — pkg/enums
 
@@ -180,7 +180,7 @@ An unrecognized `StageDef.Type` value is a valid forward-compat passthrough, not
 
 `pkg/dsl` has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual` against the original — the drift tripwire. `expand_test.go` covers `ExpandCalls`, the package's only executable code; everything else in `pkg/dsl` and `pkg/enums` is a declaration. No numeric coverage gate is wired into CI.
 
-`pkg/dsl/dsltest` holds golden compiled plans, written only by Definition's golden test from its real publish and run by Execution's tests, so both services test one contract (design doc §2.7). `LibraryCalls()` is a workflow calling one library module from two lanes, with call-site assignees and a nested module. `LibraryCallBoundaries()` adds an interrupting timer and message boundary on calls, each leading to an end event.
+`pkg/dsl/dsltest` holds golden compiled plans, written only by Definition's golden test from its real publish and run by Execution's tests, so both services test one contract (design doc §2.7). `LibraryCalls()` is a workflow calling one library module from two lanes, with call-site assignees, a nested module whose task the workflow's calls name by path, and a module that keeps its own message. `LibraryCallBoundaries()` adds an interrupting timer and message boundary on calls, each leading to an end event and so terminating.
 
 ## Versioning and releases
 

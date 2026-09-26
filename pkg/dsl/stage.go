@@ -18,9 +18,12 @@ type StageDef struct {
 	IOMapping        *IOMapping        `json:"io_mapping,omitempty"`
 }
 
-// BoundaryTimer is a timer-boundary-event attached to a StageDef.
+// BoundaryTimer is a timer-boundary-event attached to a StageDef. Like every
+// boundary, it either moves to TargetDept or, with Terminates, ends its path
+// at an end event; ExpandCalls refuses one that does both or neither.
 type BoundaryTimer struct {
 	Duration     string `json:"duration"`
 	Interrupting bool   `json:"interrupting"`
 	TargetDept   string `json:"target_dept,omitempty"`
+	Terminates   bool   `json:"terminates,omitempty"`
 }

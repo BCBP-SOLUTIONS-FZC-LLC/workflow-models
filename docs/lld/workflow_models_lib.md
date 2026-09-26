@@ -17,7 +17,7 @@
    - 2.5 Branch & Step Variants
    - 2.6 `ExpandCalls`
    - 2.7 `pkg/dsl/dsltest`: Golden Plans
-3. Package Reference: `pkg/events` (Retired)
+3. Package Reference: `pkg/events`
 4. Package Reference: `pkg/enums`
 5. Scope Boundary: What's Not In This Module
 6. Versioning
@@ -43,7 +43,7 @@
 Go 1.26, zero external dependencies. Two packages, `pkg/dsl` and `pkg/enums`, plus `pkg/dsl/dsltest`, which holds golden plans for tests (§2.7). It exists to close two structural drift sources that are otherwise kept in sync by discipline, not by the compiler — one of them dormant since `pkg/events` was retired (rev 2.4; §3):
 
 1. **The compiled-plan DSL travels as an opaque JSON string.** `DefinitionService.GetCompiledWorkflow` returns `compiled_plan_json` as a plain `string`, not a typed message. Nothing stops Definition's compiler from adding a BPMN element handler, an `ExecutionStep` variant, or a struct field without Execution ever finding out until an instance fails at runtime. Two drift bugs already exist in the codebase from this class of problem: `eventBasedGateway` silently dropped by XML parsing, and `inclusiveGateway` inconsistently handled across code and documentation.
-2. **Event payload structs are hand-mirrored against each service's own AsyncAPI spec.** Execution does this today for its 18 outbound payloads, each hand-matched against its own `api/asyncapi.yaml` by discipline alone with no compiler check between a struct and its governing schema. `workflow.template.published` is the sharp illustrative case for this risk, even though the event itself is now retired platform-wide (rev 2.4; §3): its `TemplatePublishedPayload` had to match `WorkflowTemplatePublishedPayload` in Definition's own `api/asyncapi.yaml`, Definition produced the event, and Execution consumed it for cache pre-warm (`execution_service.md` §6.2) — two independently hand-maintained copies of the same contract sitting on either side of the event bus with no compiler check between them. No event currently crosses the Definition↔Execution boundary, so this drift source is dormant, not closed: the same risk recurs unchanged the moment some future event needs to cross this boundary.
+2. **Event payload structs are hand-mirrored against each service's own AsyncAPI spec.** Execution does this today for its 18 outbound payloads, each hand-matched against its own `api/asyncapi.yaml` by discipline alone with no compiler check between a struct and its governing schema.
 
 Both failure classes are the same shape: a second source of truth kept in sync by discipline. Publishing the real Go structs as an importable module turns a silent runtime surprise into a compile-time error the moment a consumer bumps the dependency.
 
@@ -149,6 +149,7 @@ One `StageDef` per task/stage in a department's lane.
 | `Duration` | `string` | `duration` | ISO-8601 timer duration. |
 | `Interrupting` | `bool` | `interrupting` | Whether firing cancels the task it's attached to. |
 | `TargetDept` | `string` | `target_dept,omitempty` | Department the timer routes to on fire. |
+| `Terminates` | `bool` | `terminates,omitempty` | True when the boundary's path leads to an end event before any task: firing ends the path instead of moving to a department. Every boundary — this one, `MessagePath`, `ErrorPath` and `TimerPath` — sets exactly one of `TargetDept` and `Terminates`; `ExpandCalls` refuses one that sets both or neither (§2.6). |
 
 **Definition populates it via** a small stage-type registry, `internal/bpmn_compiler/stage_types.go`'s `defaultStageTypes()` map (`"prep"`→`PrepActivity`, `"review"`→`ReviewActivity`, `"approve"`→`ApproveActivity`), plus `element/send_task.go`/`element/receive_task.go` for the `send_task`/`receive_task` types. `IsZeebeUserTask` is set by the parser but has no compiler-side consumer — confirmed inert, write-only (Appendix B). `ConnectorType`/`IOMapping` are populated by the `serviceTask` element handler (`definition_service.md` §4.1.2/§4.1.3.3) — the same handler that produces `Type = enums.StageTypeConnector`.
 
@@ -221,6 +222,7 @@ Execution: `execution_service.md` §2.6 (Exclusive-Gateway Evaluation) — a sma
 | `ErrorCode` | `string` | `error_code,omitempty` | BPMN error code to match. |
 | `ShortCircuit` | `bool` | `short_circuit` | Whether this path bypasses remaining subprocess steps. |
 | `TargetDept` | `string` | `target_dept,omitempty` | Department the path routes to on fire. |
+| `Terminates` | `bool` | `terminates,omitempty` | The path ends at an end event (as on `BoundaryTimer`, §2.3). |
 
 `TimerPath`:
 
@@ -229,6 +231,7 @@ Execution: `execution_service.md` §2.6 (Exclusive-Gateway Evaluation) — a sma
 | `Duration` | `string` | `duration` | ISO-8601 timer duration. |
 | `Interrupting` | `bool` | `interrupting` | Whether firing cancels the subprocess. |
 | `TargetDept` | `string` | `target_dept,omitempty` | Department the path routes to on fire. |
+| `Terminates` | `bool` | `terminates,omitempty` | The path ends at an end event (as on `BoundaryTimer`, §2.3). |
 
 Execution: `execution_service.md` §2.3 (subProcess, CallPool, and callActivity Constructs) for `SubWorkflowStep`'s nested dispatch, and the same §2.2 boundary-event machinery as `StageDef.BoundaryTimer`/`BoundaryMessage` for `ErrorPath`/`TimerPath`/`MessagePath` attached at the subprocess level.
 
@@ -248,7 +251,7 @@ Execution: §2.3 there — a Temporal child workflow dispatch; only the main poo
 | `Name` | `string` | `name,omitempty` | The `callActivity`'s name. |
 | `Plan` | `string` | `plan` | Name of the called plan in `CompiledCollaboration.Plans`. |
 | `Departments` | `map[string]string` | `departments,omitempty` | Binds a department of the called plan to a department of the calling plan. A called department absent from the map keeps its own `IAMDepartmentID`. |
-| `Assignees` | `map[string]string` | `assignees,omitempty` | A called task's `NodeID` → a default user for this call only. It replaces that task's own `DefaultAssignees`. |
+| `Assignees` | `map[string]string` | `assignees,omitempty` | A task → a default user for this call only, replacing that task's own `DefaultAssignees`. The key is a task `NodeID` of the called plan, or the `NodeID`s of the calls leading to a task further down, then its `NodeID`, joined by `::` (`Review_Check::Check_Task`). An outer call's entry wins over an inner call's own. |
 | `ErrorPaths` / `TimerPaths` / `MessagePaths` | as on `SubWorkflowStep` | `error_paths` / `timer_paths` / `message_paths`, `omitempty` | Boundary events attached to the `callActivity`. Their `TargetDept` names a department of the calling plan. |
 
 The step's own `IOMapping` and `Extras` carry the `callActivity`'s input/output mapping and properties, as on any other step.
@@ -271,6 +274,7 @@ Execution: applied **entry-only** — inputs are copied into `context_json` befo
 | `MessageName` | `string` | `message_name` | Correlates to a `MessageDef.Name` at the collaboration level (§2.1). |
 | `Interrupting` | `bool` | `interrupting` | Whether receipt cancels the attached task/subprocess. |
 | `TargetDept` | `string` | `target_dept,omitempty` | Department the message routes to on receipt. |
+| `Terminates` | `bool` | `terminates,omitempty` | The path ends at an end event (as on `BoundaryTimer`, §2.3). |
 
 Execution: the instance-wide, node-keyed message-correlation buffer (§2.1 above), including cross-sibling-parallel-branch correlation, with one accepted residual — a consumed message survives a force-back past its sending branch; the re-fire becomes a fresh pending entry (`execution_service.md` §8.2's worked example).
 
@@ -285,9 +289,10 @@ Execution: the instance-wide, node-keyed message-correlation buffer (§2.1 above
   - A department bound in `Departments` takes the bound department's `Label` and `IAMDepartmentID`.
   - An unbound department keeps its own.
   - `Ignore`, `Props` and the stages are copied. A stage named in `Assignees` gets that user as its only default assignee.
-- **References.** Every department reference inside the called steps is rewritten to the cloned IDs: `Sequential`, `ParallelBranch.DeptID`, `ExclusiveBranch.Target`/`RevertToDept`, the `TargetDept` of every path, and each stage's `BoundaryTimer`/`BoundaryMessage`. The call's own boundary paths keep the calling plan's departments.
+- **Assignees down the call path.** A call's `Assignees` key with `::` in it is handed to the inner call it names, with the rest of the key, and wins over that call's own `Assignees`. The outermost call can therefore name the user of any task beneath it.
+- **References.** Every department reference inside the called steps is rewritten to the cloned IDs: `Sequential`, `ParallelBranch.DeptID`, `ExclusiveBranch.Target`/`RevertToDept`, the `TargetDept` of every path, and each stage's `BoundaryTimer`/`BoundaryMessage`. The call's own boundary paths keep the calling plan's departments. A boundary that terminates keeps no target.
 - **Identity.** A task inside a call has the node key `<NodeID>::<department ID>/<task NodeID>`. Two calls to the same plan therefore give distinct tasks.
-- **Errors.** A nil collaboration; two plans with one name; a missing plan; a call cycle; a called department with an empty ID (it would have no scoped ID); a cloned ID the calling plan already has; a binding of a department the called plan lacks; a binding to a department the calling plan does not itself own (a call binds to its caller's departments, never to another call's); and an `Assignees` key naming a task the called plan lacks. `ErrPlanTooLarge` is returned when a plan holds more than `maxStages` stages and calls after expansion, each call counting one; `maxStages <= 0` disables the check.
+- **Errors.** A nil collaboration; two plans with one name; a missing plan; a call cycle; a called department with an empty ID (it would have no scoped ID); a cloned ID the calling plan already has; a binding of a department the called plan lacks; a binding to a department the calling plan does not itself own (a call binds to its caller's departments, never to another call's); an `Assignees` key naming a task the called plan lacks, or leading through a call it does not make; and, in any plan, a boundary that sets both or neither of `TargetDept` and `Terminates`, so an empty target is never read as the end of a path. `ErrPlanTooLarge` is returned when a plan holds more than `maxStages` stages and calls after expansion, each call counting one; `maxStages <= 0` disables the check.
 - **Department IDs** must not contain `/`: a node key is `<department>/<task>`, and consumers split it at the first `/`.
 - **Message names are not scoped.** Two calls of one plan that run at the same time share the names of the messages inside it.
 
@@ -297,26 +302,24 @@ Definition runs it on the plan it has just compiled, to count stages and to read
 
 `dsltest` ships compiled collaborations exactly as Definition's publish stores them, so Definition's compiler and Execution's interpreter are tested against the same bytes rather than each against a plan it built for itself.
 
-- **`LibraryCalls() []byte`** is a workflow, `Golden`, with two lanes (Engineering and Ops, each with a catalogue `dept_id`). Each lane runs a call to library module `Process_Review` version 2: `CA_Eng`, and `CA_Ops` whose `Assignees` gives `Review_Task` a default user. `Process_Review` has no lanes; its `Review_Task` names a user and its call `Review_Check` calls `Process_Check` version 1, whose `Check_Task` names nobody, so a start request must supply that person through `override_map`. Once expanded, the module tasks' node keys are `CA_Eng::Process_Review@v2/Review_Task`, `CA_Eng::Review_Check::Process_Check@v1/Check_Task` and the same under `CA_Ops`. The file is `testdata/library_calls.json` (`LibraryCallsFile`).
-- **`LibraryCallBoundaries() []byte`** is a workflow, `Golden Boundaries`, with one lane running `Process_Review` twice: `CA_Timer` with an interrupting P5D timer boundary, then a send task delivering message `withdraw`, then `CA_Message` with an interrupting message boundary on `withdraw`. Both boundaries lead straight to an end event, so they have no target department and end their path. The file is `testdata/library_call_boundaries.json` (`LibraryCallBoundariesFile`).
+- **`LibraryCalls() []byte`** is a workflow, `Golden`, with two lanes (Engineering and Ops, each with a catalogue `dept_id`). Each lane runs a call to library module `Process_Review` version 2: `CA_Eng`, and `CA_Ops` whose `Assignees` gives `Review_Task` a default user. `Process_Review` has no lanes; its `Review_Task` names a user and has an interrupting boundary on the module's own message `review-recalled`, declared in the module's document, that ends the module's flow. Its call `Review_Check` calls `Process_Check` version 1, whose `Check_Task` names nobody; each workflow call names that user by the path `Review_Check::Check_Task`. Once expanded, the module tasks' node keys are `CA_Eng::Process_Review/Review_Task`, `CA_Eng::Review_Check::Process_Check/Check_Task` and the same under `CA_Ops`: a laneless module's department is named by its process id, so the keys stay the same when a call moves module version. The file is `testdata/library_calls.json` (`LibraryCallsFile`).
+- **`LibraryCallBoundaries() []byte`** is a workflow, `Golden Boundaries`, with one lane running `Process_Review` twice: `CA_Timer` with an interrupting P5D timer boundary, then a send task delivering message `withdraw`, then `CA_Message` with an interrupting message boundary on `withdraw`. Both boundaries lead straight to an end event, so they terminate. The workflow's `withdraw` and the module's `review-recalled` share a message id in their own documents and stay distinct. The file is `testdata/library_call_boundaries.json` (`LibraryCallBoundariesFile`).
 - **Who writes them.** Only Definition's `TestGolden`, which publishes the fixture through the real compiler and library resolution. The test fails when a published plan and its golden differ; `-update-golden`, run with a Go workspace that uses a workflow-models checkout, rewrites the files. Nobody edits them by hand.
-- **Who reads them.** `dsltest`'s own tests pin the facts consumers rely on after `ExpandCalls`: each call's tasks run in the caller lane's IAM department, the node keys are exact, the call-site and task defaults apply, the nested task has nobody, and each boundary call keeps its interrupting path with no target. Execution's tests decode, expand and run them: start refusal and `override_map` by node key, each call's tasks in the caller's department, an end-to-end run through real Temporal, and each boundary ending the instance.
+- **Who reads them.** `dsltest`'s own tests pin the facts consumers rely on after `ExpandCalls`: each call's tasks run in the caller lane's IAM department, the node keys are exact, the call-site, path and task defaults apply, the module's message keeps its own name, and each boundary call keeps its interrupting path, which terminates. Execution's tests decode, expand and run them: eligibility and `override_map` by node key, each call's tasks in the caller's department, an end-to-end run through real Temporal, and each boundary ending the instance.
 
 A change to the compiler's output therefore shows up as a failing Definition test, and a new golden as a changed file in workflow-models that Execution's tests run against.
 
 ---
 
-## 3. Package Reference: `pkg/events` (Retired)
+## 3. Package Reference: `pkg/events`
 
-This package does not exist in the module today — see the Revision history's rev 2.4 row for what it held and why. The field-by-field table this section once carried for `TemplatePublishedPayload` is preserved in this file's git history (rev 2.2 and earlier); see `CHANGELOG.md`'s `[Unreleased]` § Removed entry for the platform-wide removal record.
-
-This section number is kept as a retired stub rather than renumbered away, so every other section's `§3`/`§4`/etc. cross-reference in this document stays valid.
+This package does not exist in the module anymore, kept as placeholder for any future shared event payloads.
 
 ---
 
 ## 4. Package Reference: `pkg/enums`
 
-Shrinks to exactly what `pkg/dsl` needs — five `StageType` string constants, nothing else; the event-type constant this package once also held is retired (§4.2).
+Holds exactly what `pkg/dsl` needs: the six `StageType` string constants, nothing else.
 
 ### 4.1 `StageType`
 
@@ -333,12 +336,6 @@ An unrecognized `StageDef.Type` value is a valid forward-compat passthrough, not
 
 `ExecutionStep`'s variants have no wire discriminator string to constantize here — as §2.4 states, "which variant" is just "which field is non-nil," already expressed in Go's type system.
 
-### 4.2 `EventTypeTemplatePublished` (Retired)
-
-This constant does not exist in the package today — it was removed together with `pkg/events` (§3) when the `workflow.template.published` event was retired platform-wide. See the Revision history's rev 2.4 row for the full record.
-
-The 18 outbound wire-type strings, and the payload enums `initiator`/tenant `status`/delegation `scope`/`ended_reason`/force-route `direction`, live in Execution's own enum constants, not this package (§5) — Definition never references any of these.
-
 ---
 
 ## 5. Scope Boundary: What's Not In This Module
@@ -353,7 +350,7 @@ The module holds only what both Definition Service and Execution Service actuall
 
 **`platform-events`' `Envelope[T]`** is not re-exported (Appendix A #7) — a convenience neither service requires from this module.
 
-Why this matters as its own boundary, not an implementation detail: a module that quietly grows to hold "everything Execution happens to touch" stops being a compile-time-shared contract and becomes an unversioned dumping ground neither service can safely evolve independently. The module's footprint is deliberate — today it holds exactly `pkg/dsl` (with its test-data package `pkg/dsl/dsltest`) and `pkg/enums`'s `StageType` constants (see Revision history for how the scope narrowed to this) — not an oversight to be quietly grown back.
+A module that quietly grows to hold "everything Execution happens to touch" stops being a compile-time-shared contract and becomes an unversioned dumping ground neither service can safely evolve independently. The module's footprint is deliberate — today it holds exactly `pkg/dsl` (with its test-data package `pkg/dsl/dsltest`) and `pkg/enums`'s `StageType` constants.
 
 ---
 
@@ -554,5 +551,6 @@ One row per §12 gap — Blocker (must exist before the `v1.0.0` tag) or Deferre
 | 2.5 | 2026-09-10 | The five inbound IAM-owned payload names in §5 corrected from dotted-lowercase to PascalCase (`DelegationStarted`, `DelegationEnded`, `TenantStateChanged`, `UserDeleted`, `UserAvailabilityChanged`), matching IAM's confirmed platform-wide convention and `execution_service.md` rev 1.42. Documentation-only — these payloads are Execution-side and were never in this module. |
 | 2.6 | 2026-09-10 | The 2 dotted-lowercase `workflow.*` citations renamed to PascalCase, following `execution_service.md` rev 1.45. These are Execution-side wire types this module does not carry — `pkg/events` was removed in rev 2.4 — so this is a citation fix only. |
 | 2.7 | 2026-09-24 | **Called processes are referenced, not inlined** (§2.4, §2.5, §2.6). New `ExecutionStep.CallPlan` / `CallPlanStep`: a `callActivity` names a plan of the collaboration, compiled once, and carries its department bindings, call-site assignees and boundary paths. New `ExpandCalls`, the one shared, pure expansion both services run: it turns each call into the `SubWorkflowStep` Execution already interprets, with call-scoped departments (`<NodeID>::<department>`), so two calls of one module give distinct tasks and each bound department carries the caller's IAM department. §2.1 `Plans` includes called processes. §9 and §10 list the new tests and file. The in-repo copy was re-synced from the design copy first; it lacked revs 2.5–2.6. `ExpandCalls` refuses empty and colliding department IDs, bindings to another call's departments and unknown assignee tasks, and counts calls toward its budget. §2.2's `IAMDepartmentID` note and §6.1 were stale and now state the shipped behaviour. |
-| 2.8 | 2026-09-25 | **Golden plans** (§2.7, §9, §10). New package `pkg/dsl/dsltest` with `LibraryCalls`: the compiled collaboration Definition's publish stores for a workflow calling one library module from two lanes, one call with message and timer boundaries and one with call-site assignees, the module calling a nested module whose task names nobody. No boundary events, which Execution cannot yet run on a call. Definition's golden test writes it and fails when its publish differs; `dsltest`'s own test pins what consumers rely on after `ExpandCalls`; Execution's tests run it. Closes the cross-repo fixture left open when publish began storing a collaboration (definition LLD rev 1.19). |
+| 2.8 | 2026-09-25 | **Golden plans** (§2.7, §9, §10). New package `pkg/dsl/dsltest` with `LibraryCalls`: the compiled collaboration Definition's publish stores for a workflow calling one library module from two lanes, one call with call-site assignees, the module calling a nested module whose task names nobody. It has no boundary events, which Execution could not run on a call. Definition's golden test writes it and fails when its publish differs; `dsltest`'s own test pins what consumers rely on after `ExpandCalls`; Execution's tests run it. Closes the cross-repo fixture left open when publish began storing a collaboration (definition LLD rev 1.19). |
 | 2.9 | 2026-09-25 | **A golden for boundaries on calls** (§2.7). `dsltest.LibraryCallBoundaries`: two calls of one module, one with an interrupting P5D timer boundary and one with an interrupting message boundary fed by a send task, each leading to an end event. Execution runs both, now that it reads ISO 8601 periods and ends a path at a boundary with no target (execution LLD rev 1.61). |
+| 2.10 | 2026-09-26 | **An explicit end for boundaries, assignees by call path, and the goldens re-made** (§2.3, §2.5, §2.6, §2.7). Every boundary — `BoundaryTimer`, `MessagePath`, `ErrorPath`, `TimerPath` — gains `Terminates`, and sets exactly one of it and `TargetDept`; `ExpandCalls` refuses a boundary that sets both or neither. An empty target had meant both "leads to an end event" and "leads somewhere the compiler could not name", so a boundary of the second kind ended its instance silently. `CallPlanStep.Assignees` keys may be a path of calls to a task further down (`Review_Check::Check_Task`), the outermost call's entry winning, so a workflow can name the user of any module task it runs; `ExpandCalls` refuses a path through a call the plan does not make. The goldens are re-made by Definition's publish: node keys name a laneless module by its process id, without its version; every task has a default user, the nested one by path; the module declares and keeps its own message; boundaries to an end event terminate. §1, §3, §4 and §5 again carry the owner's rev-2.4-era simplifications, which the rev 2.7 re-sync had reverted; §4.2 is gone. Rev 2.8's row no longer claims boundaries it did not have. Released as `v1.3.0-rc.2`. |
