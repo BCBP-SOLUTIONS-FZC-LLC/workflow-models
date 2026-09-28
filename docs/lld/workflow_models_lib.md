@@ -319,7 +319,7 @@ This package does not exist in the module anymore, kept as placeholder for any f
 
 ## 4. Package Reference: `pkg/enums`
 
-Holds exactly what `pkg/dsl` needs: the six `StageType` string constants, nothing else.
+Holds the six `StageType` string constants `pkg/dsl` needs, and `AllowedBPMNElements`, the Tier-1 BPMN element allowlist Definition's compiler enforces.
 
 ### 4.1 `StageType`
 

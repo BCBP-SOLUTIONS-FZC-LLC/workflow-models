@@ -4,7 +4,7 @@
 package dsl
 
 // CurrentSchemaVersion is the DSL schema major version this module encodes.
-// See workflow_models_lib LLD §6.1.
+// See workflow-models LLD §6.1.
 const CurrentSchemaVersion = 1
 
 // CompiledCollaboration is the root artifact of a compiled BPMN

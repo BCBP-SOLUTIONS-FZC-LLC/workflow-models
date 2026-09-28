@@ -8,7 +8,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 Scope rule: a type only one side reads or writes stays in that service's own domain package, not here. See `README.MD` § Scope boundary for the exact list of what's deliberately excluded (Execution's 18 outbound events, its 5 IAM-owned inbound payloads, `platform-events`' `Envelope[T]`).
 
-Consuming services set `GOPRIVATE=github.com/BCBP-SOLUTIONS-FZC-LLC/*` and `go get github.com/BCBP-SOLUTIONS-FZC-LLC/workflow-models@vX.Y.Z` — never a local `replace` directive. `workflow-definition-service` is the first (and currently only) consumer, migrated via **direct reference** (every caller imports `pkg/dsl`/`pkg/enums` directly — no type alias indirection).
+Consuming services set `GOPRIVATE=github.com/BCBP-SOLUTIONS-FZC-LLC/*` and `go get github.com/BCBP-SOLUTIONS-FZC-LLC/workflow-models@vX.Y.Z` — never a local `replace` directive. Both `workflow-definition-service` and the Execution Service import it by direct reference: every caller imports `pkg/dsl`/`pkg/enums` directly, with no type alias indirection.
 
 ## Common Commands
 
@@ -43,9 +43,9 @@ graph LR
 
 - `pkg/dsl` — the compiled-plan DSL (`CompiledCollaboration` → `CompiledPlan` → `DepartmentDef` → `StageDef` → `ExecutionPlan`/`ExecutionStep`) and `ExpandCalls`. Definition's BPMN compiler produces every field; Execution's workflow function consumes every field — the full contract, not a curated subset.
 - `pkg/dsl/dsltest` — golden compiled collaborations, written by Definition's `TestGolden` and run by Execution's tests (LLD §2.7).
-- `pkg/enums` — `StageDef.Type` discriminator values (`StageTypePrep`/`Review`/`Approve`/`SendTask`/`ReceiveTask`/`Connector`).
+- `pkg/enums` — `StageDef.Type` discriminator values (`StageTypePrep`/`Review`/`Approve`/`SendTask`/`ReceiveTask`/`Connector`) and `AllowedBPMNElements`, the Tier-1 BPMN element allowlist.
 
-Full field-by-field tables: `README.MD` § Package reference. Rationale/history for every shape decision: `ARCHITECTURE.md` (this repo) and `design/LLD/workflow_models_lib.md` (the `BCBP-SOLUTIONS-FZC-LLC/design` repo) — that LLD is the authoritative source; don't let this file or the README drift from it.
+Full field-by-field tables: `README.MD` § Package reference. Rationale/history for every shape decision: `ARCHITECTURE.md` (this repo) and the workflow-models LLD (`docs/lld/`, with its published copy in the design repo) — that LLD is the authoritative source; don't let this file or the README drift from it.
 
 ## Key Design Decisions
 
@@ -79,4 +79,4 @@ See `VERSIONING.md` for the full SemVer policy and release process; `CHANGELOG.m
 | `CHANGELOG.md` | Per-version changes |
 | `CONTRIBUTING.md` | Development setup, PR checklist |
 | `SECURITY.md` | Vulnerability reporting, trust model |
-| `design/LLD/workflow_models_lib.md` (`BCBP-SOLUTIONS-FZC-LLC/design` repo) | Full field-by-field design rationale — the authoritative source for everything above |
+| The workflow-models LLD (`docs/lld/workflow_models_lib.md`, published in the design repo) | Full field-by-field design rationale — the authoritative source for everything above |
