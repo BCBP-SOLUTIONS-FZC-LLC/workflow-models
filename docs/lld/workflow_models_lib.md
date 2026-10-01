@@ -42,14 +42,14 @@
 
 Go 1.26, zero external dependencies. Two packages, `pkg/dsl` and `pkg/enums`, plus `pkg/dsl/dsltest`, which holds golden plans for tests (§2.7). It exists to close two structural drift sources that are otherwise kept in sync by discipline, not by the compiler — one of them dormant since `pkg/events` was retired (rev 2.4; §3):
 
-1. **The compiled-plan DSL travels as an opaque JSON string.** `DefinitionService.GetCompiledWorkflow` returns `compiled_plan_json` as a plain `string`, not a typed message. Nothing stops Definition's compiler from adding a BPMN element handler, an `ExecutionStep` variant, or a struct field without Execution ever finding out until an instance fails at runtime. Two drift bugs already exist in the codebase from this class of problem: `eventBasedGateway` silently dropped by XML parsing, and `inclusiveGateway` inconsistently handled across code and documentation.
+1. **The compiled-plan DSL travels as untyped JSON.** The Definition Service's compiled-plan read returns it as a JSON object that its OpenAPI document leaves open (`definition_service.md` §3.4.1). Nothing stops Definition's compiler from adding a BPMN element handler, an `ExecutionStep` variant, or a struct field without Execution ever finding out until an instance fails at runtime. Two drift bugs already exist in the codebase from this class of problem: `eventBasedGateway` silently dropped by XML parsing, and `inclusiveGateway` inconsistently handled across code and documentation.
 2. **Event payload structs are hand-mirrored against each service's own AsyncAPI spec.** Execution does this today for its 18 outbound payloads, each hand-matched against its own `api/asyncapi.yaml` by discipline alone with no compiler check between a struct and its governing schema.
 
 Both failure classes are the same shape: a second source of truth kept in sync by discipline. Publishing the real Go structs as an importable module turns a silent runtime surprise into a compile-time error the moment a consumer bumps the dependency.
 
 **Status.** Pre-release `v1.3.0-rc.3`, pinned by Definition Service and Execution Service. Both reference the module's types directly (§8).
 
-**Relationship to the gRPC/proto contract.** `DefinitionService.GetCompiledWorkflow`/`ExecutionService.CheckActiveInstances`/`PauseUserTasks` (`api/proto/definition/v1/definition.proto`, `execution/v1/execution_service.proto`) are a separate, already-solved sharing mechanism — `buf`-generated stubs already give both services one structurally-shared contract for that RPC layer. This module doesn't wrap or duplicate it; see `definition_service.md` §3.4 / `execution_service.md` §5.3 for that contract.
+**Relationship to the internal HTTP contracts.** The calls between the two services — the compiled-plan read, the archive guard and the pause of a removed member's tasks — are specified in OpenAPI documents each service owns and both test against (`definition_service.md` §3.4, `execution_service.md` §5.3). This module doesn't wrap or duplicate them; it holds the plan's own shape.
 
 **Wire vs. in-process authority.** When the module holds an event, two artifacts must agree: the JSON Schema registered in AWS Glue (the wire contract, governed by `platform-schemagov`, driven off each service's own `api/asyncapi.yaml`) and the Go struct in this module (the in-process contract). The schema stays the cross-language wire authority; the struct is the Go-side compile authority; a golden round-trip test is the tripwire that fails CI if they diverge. No event lives in the module today (§3), so this split is dormant rather than active; it would govern whatever event is added next. For the compiled-plan DSL there is no separate wire authority — the wire is an opaque JSON string — so the module's struct is the only authority that exists.
 
@@ -362,7 +362,7 @@ A module that quietly grows to hold "everything Execution happens to touch" stop
 ### 6.1 DSL Schema Versioning
 
 - `CompiledCollaboration.SchemaVersion int` is stamped by the compiler at publish time (`CompileForPublish`) — a plan is compiled once and stored immutably, so the version is captured at that moment, never re-derived later.
-- `GetCompiledWorkflowResponse.dsl_schema_version` carries it (non-breaking under `buf`'s `breaking: use: FILE` policy), so Execution can check compatibility without parsing the JSON blob and fail closed on a major-version mismatch.
+- The compiled-plan read returns the plan as stored, so Execution reads `SchemaVersion` from the plan itself and fails closed on a major it has no strategy for (`execution_service.md` §2.5).
 - A new `ExecutionStep` variant is additive in shape but not safe for a consumer that predates it (§7: an unknown variant is a hard error). `CallPlan` (§2.5) is such a variant; its contract is that consumers run `ExpandCalls` (§2.6) before interpreting a plan, so it never reaches an interpreter.
 - Orthogonal to `version_number` (the workflow template's own draft/published revision, not the DSL shape). The producer stays decoupled: Definition need not know what DSL version Execution supports; Execution self-checks the artifact it receives.
 
@@ -464,7 +464,7 @@ Publishing/versioning matches the other org private Go libs (`platform-events`/`
 Residual build-list items not already covered by §6–§9 above:
 - Populate the `Extras`/`IOMapping` key registry (§7) as real keys are identified; add the `exec.`-prefix validator.
 - Build Execution's parser and event codec against the module from day one — no interim hand-rolled types. **N/A** — moot: `pkg/events` was retired (rev 2.4, §3) before Execution ever built one.
-- Extend `buf`'s breaking-change gate to cover the new `dsl_schema_version` proto field (§6.1) once added.
+- ~~Extend `buf`'s breaking-change gate to cover the new `dsl_schema_version` proto field (§6.1) once added.~~ **Dropped (rev 2.13):** the field is gone with the gRPC link; the plan's own `SchemaVersion` is the one source.
 
 ---
 
@@ -513,7 +513,7 @@ That doc made the original DSL-half decision (shared module, schema versioning, 
 
 | Item | Owner | Status |
 | --- | --- | --- |
-| `CompiledCollaboration.SchemaVersion` + `GetCompiledWorkflowResponse.dsl_schema_version` | Definition Service | Factory/Strategy compatibility layer, `execution_service.md` §2.5 (§6.1) |
+| `CompiledCollaboration.SchemaVersion` | Definition Service | Factory/Strategy compatibility layer, `execution_service.md` §2.5 (§6.1) |
 | `Extras`/`IOMapping` key registry | Definition Service / Execution team | Empty — populate as keys are given real meaning (§7) |
 | `platform-models` naming collision | IAM | Referred, no answer yet (`IAM/platform-models-status-sync.md`) |
 | This module's own event `.v2` dual-publish window | Execution team | **N/A** — moot: `pkg/events` was retired (rev 2.4, §3) before this was ever needed; Execution's own outbound catalogue's 30-day precedent (`execution_service.md` §6.8) remains the number to carry over if an event is ever added back (§6.2) |
@@ -559,3 +559,4 @@ One row per §12 gap — Blocker (must exist before the `v1.0.0` tag) or Deferre
 | 2.10 | 2026-09-26 | **An explicit end for boundaries, assignees by call path, and the goldens re-made** (§2.3, §2.5, §2.6, §2.7). Every boundary — `BoundaryTimer`, `MessagePath`, `ErrorPath`, `TimerPath` — gains `Terminates`, and sets exactly one of it and `TargetDept`; `ExpandCalls` refuses a boundary that sets both or neither. An empty target had meant both "leads to an end event" and "leads somewhere the compiler could not name", so a boundary of the second kind ended its instance silently. `CallPlanStep.Assignees` keys may be a path of calls to a task further down (`Review_Check::Check_Task`), the outermost call's entry winning, so a workflow can name the user of any module task it runs; `ExpandCalls` refuses a path through a call the plan does not make. The goldens are re-made by Definition's publish: node keys name a laneless module by its process id, without its version; every task has a default user, the nested one by path; the module declares and keeps its own message; boundaries to an end event terminate. §1, §3, §4 and §5 again carry the owner's rev-2.4-era simplifications, which the rev 2.7 re-sync had reverted; §4.2 is gone. Rev 2.8's row no longer claims boundaries it did not have. Released as `v1.3.0-rc.2`. |
 | 2.11 | 2026-10-01 | **Version and package references current** (§1, §3, §5, Appendix B). §1 Status and Appendix B name `v1.3.0-rc.2`, pinned by both services. §3 reserves `pkg/events` for event payloads shared by both services. §5 lists `AllowedBPMNElements` with the `StageType` constants in `pkg/enums`. |
 | 2.12 | 2026-10-01 | **Node keys, human tasks and task names are shared** (§2.3). `NodeKey` and `StageDef.CreatesHumanTask` are the one definition of a stage's key and of whether it gets an assignee; Definition and Execution each carried their own copies. `StageDef.Name` carries the task's name, which Definition's node and module-contract reads return; the goldens are re-made with it. §1 and Appendix B name the release. Released as `v1.3.0-rc.3`. |
+| 2.13 | 2026-10-01 | **The gRPC link is gone** (§1, §6.1, §11, Appendix B). The two services call each other over internal HTTP, each endpoint specified in an OpenAPI document both test against (`definition_service.md` §3.4, `execution_service.md` §5.3). The compiled-plan read returns the plan as a JSON object and no separate `dsl_schema_version`: `CompiledCollaboration.SchemaVersion` is the one source of the schema version. |
