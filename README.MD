@@ -138,7 +138,7 @@ CompiledCollaboration                 (root artifact)
 | `CompiledPlan` | `Name`, `TaskQueue string,omitempty`, `Ignored bool,omitempty`, `Departments []DepartmentDef`, `Execution ExecutionPlan`, `VisualElements []VisualElementDef,omitempty` |
 | `VisualElementDef` | `Kind`, `ID`, `Name,omitempty` |
 | `DepartmentDef` | `ID`, `Label`, `IAMDepartmentID string,omitempty`, `Ignore bool,omitempty`, `Props map[string]string,omitempty`, `Stages []StageDef` |
-| `StageDef` | `Type string` (holds `enums.StageType*` values), `Activity`, `NodeID,omitempty`, `Role`, `DefaultAssignees []string,omitempty`, `DueDate,omitempty`, `FollowUpDate,omitempty`, `BoundaryTimer *BoundaryTimer,omitempty`, `BoundaryMessage *MessagePath,omitempty`, `EngineNote,omitempty`, `Extras map[string]string,omitempty`, `IsZeebeUserTask bool,omitempty`, `ConnectorType string,omitempty`, `IOMapping *IOMapping,omitempty` |
+| `StageDef` | `Type string` (holds `enums.StageType*` values), `Activity`, `NodeID,omitempty`, `Name,omitempty`, `Role`, `DefaultAssignees []string,omitempty`, `DueDate,omitempty`, `FollowUpDate,omitempty`, `BoundaryTimer *BoundaryTimer,omitempty`, `BoundaryMessage *MessagePath,omitempty`, `EngineNote,omitempty`, `Extras map[string]string,omitempty`, `IsZeebeUserTask bool,omitempty`, `ConnectorType string,omitempty`, `IOMapping *IOMapping,omitempty` |
 | `BoundaryTimer` | `Duration`, `Interrupting bool`, `TargetDept,omitempty`, `Terminates bool,omitempty` |
 | `ExecutionPlan` | `Steps []ExecutionStep` |
 | `ExecutionStep` | `Sequential []string,omitempty`, `Parallel []ParallelBranch,omitempty`, `Exclusive []ExclusiveBranch,omitempty`, `SubWorkflow *SubWorkflowStep,omitempty`, `CallPool *CallPoolStep,omitempty`, `CallPlan *CallPlanStep,omitempty`, `IOMapping *IOMapping,omitempty`, `Extras map[string]string,omitempty`, `MessagePaths []MessagePath,omitempty` |
@@ -178,7 +178,7 @@ An unrecognized `StageDef.Type` value is a valid forward-compat passthrough, not
 
 ## Testing model
 
-`pkg/dsl` has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual` against the original — the drift tripwire. `expand_test.go` covers `ExpandCalls`, the package's only executable code; everything else in `pkg/dsl` and `pkg/enums` is a declaration. No numeric coverage gate is wired into CI.
+`pkg/dsl` has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual` against the original — the drift tripwire. `expand_test.go` covers `ExpandCalls` and `stage_test.go` covers `NodeKey` and `StageDef.CreatesHumanTask`, the package's executable code; everything else in `pkg/dsl` and `pkg/enums` is a declaration. No numeric coverage gate is wired into CI.
 
 `pkg/dsl/dsltest` holds golden compiled plans, written only by Definition's golden test from its real publish and run by Execution's tests, so both services test one contract (design doc §2.7). `LibraryCalls()` is a workflow calling one library module from two lanes, with call-site assignees, a nested module whose task the workflow's calls name by path, and a module that keeps its own message. `LibraryCallBoundaries()` adds an interrupting timer and message boundary on calls, each leading to an end event and so terminating.
 

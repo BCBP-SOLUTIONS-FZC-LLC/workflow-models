@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## What This Repo Is
 
-`workflow-models` is a **private Go shared library** (module: `github.com/BCBP-SOLUTIONS-FZC-LLC/workflow-models`, Go 1.26) — data types plus one pure function, `dsl.ExpandCalls`; no runtime, never deployed as a server. It carries every type that crosses the boundary between `workflow-definition-service` (producer) and the Execution Service (consumer): the compiled-plan DSL and the shared enum/constant discriminators.
+`workflow-models` is a **private Go shared library** (module: `github.com/BCBP-SOLUTIONS-FZC-LLC/workflow-models`, Go 1.26) — data types plus a few pure functions (`dsl.ExpandCalls`, `dsl.NodeKey`, `StageDef.CreatesHumanTask`); no runtime, never deployed as a server. It carries every type that crosses the boundary between `workflow-definition-service` (producer) and the Execution Service (consumer): the compiled-plan DSL and the shared enum/constant discriminators.
 
 Scope rule: a type only one side reads or writes stays in that service's own domain package, not here. See `README.MD` § Scope boundary for the exact list of what's deliberately excluded (Execution's 18 outbound events, its 5 IAM-owned inbound payloads, `platform-events`' `Envelope[T]`).
 
@@ -61,7 +61,7 @@ Condensed from the LLD's Appendix A — load that doc for the full rationale on 
 
 ## Testing model
 
-`pkg/dsl` has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual` against the original — the drift tripwire. The test uses the black-box package name (`dsl_test`) and stays co-located with source (`pkg/dsl/roundtrip_test.go`), not moved to a `test/` tree — idiomatic Go, not the sibling libs' layout. `pkg/dsl/expand_test.go` covers `ExpandCalls`, the only executable code; everything else in `pkg/dsl` and `pkg/enums` is a declaration. No numeric coverage gate is wired into CI.
+`pkg/dsl` has a `roundtrip_test.go`: marshal a fixture → JSON → unmarshal → `reflect.DeepEqual` against the original — the drift tripwire. The test uses the black-box package name (`dsl_test`) and stays co-located with source (`pkg/dsl/roundtrip_test.go`), not moved to a `test/` tree — idiomatic Go, not the sibling libs' layout. `pkg/dsl/expand_test.go` covers `ExpandCalls` and `pkg/dsl/stage_test.go` covers `NodeKey` and `CreatesHumanTask`, the only executable code; everything else in `pkg/dsl` and `pkg/enums` is a declaration. No numeric coverage gate is wired into CI.
 
 ## Versioning and releases
 

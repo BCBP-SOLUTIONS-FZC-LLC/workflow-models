@@ -53,7 +53,8 @@ full field-by-field reference.
 | `StageDef` | One compiled task/stage |
 | `ExecutionPlan` / `ExecutionStep` | The step sequence driving the workflow function |
 | `ParallelBranch`, `ExclusiveBranch`, `SubWorkflowStep`, `CallPoolStep`, `CallPlanStep` | `ExecutionStep` variants |
-| `ExpandCalls` | Turns every `CallPlanStep` into a `SubWorkflowStep` with call-scoped departments; the one piece of logic in `pkg/dsl`, shared so both services derive the same node keys |
+| `ExpandCalls` | Turns every `CallPlanStep` into a `SubWorkflowStep` with call-scoped departments, shared so both services derive the same node keys |
+| `NodeKey`, `StageDef.CreatesHumanTask` | A stage's key in both services, and whether it gets an assignee |
 | `IOMapping`, `IOVar`, `MessagePath`, `ErrorPath`, `TimerPath` | Supporting types for boundary events and variable mapping |
 
 ### `pkg/enums`
@@ -78,8 +79,9 @@ consumers rely on after `ExpandCalls`. Never edit a golden by hand.
 
 ## Coverage note
 
-`pkg/dsl`'s only executable code is `ExpandCalls` (`expand.go`), tested by
-`expand_test.go`; everything else in `pkg/dsl` and `pkg/enums` is a
+`pkg/dsl`'s executable code is `ExpandCalls` (`expand.go`), tested by
+`expand_test.go`, and `NodeKey`/`CreatesHumanTask` (`stage.go`), tested by
+`stage_test.go`; everything else in `pkg/dsl` and `pkg/enums` is a
 declaration. No numeric coverage gate is wired into CI (see `Makefile`'s
 `cover-func` target and `.github/workflows/ci.yml`).
 
