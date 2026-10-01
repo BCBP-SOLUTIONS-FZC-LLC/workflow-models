@@ -33,6 +33,7 @@ func TestCompiledCollaboration_RoundTrip(t *testing.T) {
 								Type:             "receive_task",
 								Activity:         "RFQ received",
 								NodeID:           "Activity_1qy77cx",
+								Name:             "RFQ received",
 								Role:             "tender-business",
 								DefaultAssignees: []string{"018e1f2a-0000-7000-8000-000000000020"},
 								DueDate:          "P3D",

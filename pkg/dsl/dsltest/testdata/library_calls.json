@@ -61,6 +61,7 @@
               "type": "review",
               "activity": "ReviewActivity",
               "node_id": "Check_Task",
+              "name": "Check",
               "role": "checker"
             }
           ]
@@ -87,6 +88,7 @@
               "type": "review",
               "activity": "ReviewActivity",
               "node_id": "Review_Task",
+              "name": "Review",
               "role": "reviewer",
               "default_assignees": [
                 "018f2d3c-0000-7000-8000-0000000000a1"

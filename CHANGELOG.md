@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0-rc.3] - 2026-10-01
+
+### Added
+
+- `NodeKey(deptID, stage)`: a stage's key in both services, `<deptID>/<NodeID>` or `<deptID>/<Type>` without a `NodeID`.
+- `StageDef.CreatesHumanTask`: false for a connector, a send task and a receive task.
+- `StageDef.Name`: the BPMN task's name.
+
+### Changed
+
+- The goldens are re-made by Definition's publish and carry each stage's name.
+
 ## [1.3.0-rc.2] - 2026-09-26
 
 ### Added
