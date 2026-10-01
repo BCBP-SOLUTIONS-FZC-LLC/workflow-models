@@ -47,7 +47,7 @@ Go 1.26, zero external dependencies. Two packages, `pkg/dsl` and `pkg/enums`, pl
 
 Both failure classes are the same shape: a second source of truth kept in sync by discipline. Publishing the real Go structs as an importable module turns a silent runtime surprise into a compile-time error the moment a consumer bumps the dependency.
 
-**Status.** Pre-release, tagged for integration testing. `pkg/dsl`/`pkg/enums` exist with golden round-trip tests; `v0.1.0-beta.1` is tagged and consumed by `workflow-definition-service`, which has migrated its own compiled-plan and event-payload types to reference the module directly (§8) — the real `v1.0.0` tag is still pending. Execution Service imports this module directly from day one, with no interim hand-rolled mirror ever written to retire.
+**Status.** Pre-release `v1.3.0-rc.2`, pinned by Definition Service and Execution Service. Both reference the module's types directly (§8).
 
 **Relationship to the gRPC/proto contract.** `DefinitionService.GetCompiledWorkflow`/`ExecutionService.CheckActiveInstances`/`PauseUserTasks` (`api/proto/definition/v1/definition.proto`, `execution/v1/execution_service.proto`) are a separate, already-solved sharing mechanism — `buf`-generated stubs already give both services one structurally-shared contract for that RPC layer. This module doesn't wrap or duplicate it; see `definition_service.md` §3.4 / `execution_service.md` §5.3 for that contract.
 
@@ -313,7 +313,7 @@ A change to the compiler's output therefore shows up as a failing Definition tes
 
 ## 3. Package Reference: `pkg/events`
 
-This package does not exist in the module anymore, kept as placeholder for any future shared event payloads.
+Reserved for event payloads shared by both services. No event is shared today (§5).
 
 ---
 
@@ -350,7 +350,7 @@ The module holds only what both Definition Service and Execution Service actuall
 
 **`platform-events`' `Envelope[T]`** is not re-exported (Appendix A #7) — a convenience neither service requires from this module.
 
-A module that quietly grows to hold "everything Execution happens to touch" stops being a compile-time-shared contract and becomes an unversioned dumping ground neither service can safely evolve independently. The module's footprint is deliberate — today it holds exactly `pkg/dsl` (with its test-data package `pkg/dsl/dsltest`) and `pkg/enums`'s `StageType` constants.
+A module that quietly grows to hold "everything Execution happens to touch" stops being a compile-time-shared contract and becomes an unversioned dumping ground neither service can safely evolve independently. The module's footprint is deliberate — today it holds exactly `pkg/dsl` (with its test-data package `pkg/dsl/dsltest`) and `pkg/enums`, which holds the `StageType` constants and `AllowedBPMNElements`.
 
 ---
 
@@ -516,7 +516,7 @@ That doc made the original DSL-half decision (shared module, schema versioning, 
 | This module's own event `.v2` dual-publish window | Execution team | **N/A** — moot: `pkg/events` was retired (rev 2.4, §3) before this was ever needed; Execution's own outbound catalogue's 30-day precedent (`execution_service.md` §6.8) remains the number to carry over if an event is ever added back (§6.2) |
 | `CompiledPlan.TaskQueue` tier-based routing logic | Definition Service | Documented intent only, zero compiler logic exists (§2.2) |
 | `DepartmentDef.IAMDepartmentID` never populated | Definition Service | Hard cross-repo blocker — Execution's `workflow_task.department_id uuid NOT NULL` can't be populated until Definition reads a real IAM department UUID from a BPMN lane's `extensionElements` (§2.2) |
-| Module tag/publish (`v1.0.0`) | Definition Service | `v0.1.0-beta.1` pre-release tagged and consumed; `v1.0.0` not yet cut (§8) |
+| Module tag/publish (`v1.0.0`) | Definition Service | `v1.3.0-rc.2` pre-release tagged and pinned by both services; `v1.0.0` not yet cut (§8) |
 
 ### Appendix B.1: Repo Readiness Checklist
 
@@ -554,3 +554,4 @@ One row per §12 gap — Blocker (must exist before the `v1.0.0` tag) or Deferre
 | 2.8 | 2026-09-25 | **Golden plans** (§2.7, §9, §10). New package `pkg/dsl/dsltest` with `LibraryCalls`: the compiled collaboration Definition's publish stores for a workflow calling one library module from two lanes, one call with call-site assignees, the module calling a nested module whose task names nobody. It has no boundary events, which Execution could not run on a call. Definition's golden test writes it and fails when its publish differs; `dsltest`'s own test pins what consumers rely on after `ExpandCalls`; Execution's tests run it. Closes the cross-repo fixture left open when publish began storing a collaboration (definition LLD rev 1.19). |
 | 2.9 | 2026-09-25 | **A golden for boundaries on calls** (§2.7). `dsltest.LibraryCallBoundaries`: two calls of one module, one with an interrupting P5D timer boundary and one with an interrupting message boundary fed by a send task, each leading to an end event. Execution runs both, now that it reads ISO 8601 periods and ends a path at a boundary with no target (execution LLD rev 1.61). |
 | 2.10 | 2026-09-26 | **An explicit end for boundaries, assignees by call path, and the goldens re-made** (§2.3, §2.5, §2.6, §2.7). Every boundary — `BoundaryTimer`, `MessagePath`, `ErrorPath`, `TimerPath` — gains `Terminates`, and sets exactly one of it and `TargetDept`; `ExpandCalls` refuses a boundary that sets both or neither. An empty target had meant both "leads to an end event" and "leads somewhere the compiler could not name", so a boundary of the second kind ended its instance silently. `CallPlanStep.Assignees` keys may be a path of calls to a task further down (`Review_Check::Check_Task`), the outermost call's entry winning, so a workflow can name the user of any module task it runs; `ExpandCalls` refuses a path through a call the plan does not make. The goldens are re-made by Definition's publish: node keys name a laneless module by its process id, without its version; every task has a default user, the nested one by path; the module declares and keeps its own message; boundaries to an end event terminate. §1, §3, §4 and §5 again carry the owner's rev-2.4-era simplifications, which the rev 2.7 re-sync had reverted; §4.2 is gone. Rev 2.8's row no longer claims boundaries it did not have. Released as `v1.3.0-rc.2`. |
+| 2.11 | 2026-10-01 | **Version and package references current** (§1, §3, §5, Appendix B). §1 Status and Appendix B name `v1.3.0-rc.2`, pinned by both services. §3 reserves `pkg/events` for event payloads shared by both services. §5 lists `AllowedBPMNElements` with the `StageType` constants in `pkg/enums`. |
