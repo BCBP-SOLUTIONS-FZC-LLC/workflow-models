@@ -20,13 +20,11 @@ func TestCompiledCollaboration_RoundTrip(t *testing.T) {
 			{
 				Name:      "Bid-No-Bid Review",
 				TaskQueue: "wf-queue-default",
-				Ignored:   false,
 				Departments: []dsl.DepartmentDef{
 					{
 						ID:              "Bid-No-Bid Review/Tender Business",
 						Label:           "Tender Business",
 						IAMDepartmentID: "018e1f2a-0000-7000-8000-000000000001",
-						Ignore:          false,
 						Props:           map[string]string{"sla": "24h"},
 						Stages: []dsl.StageDef{
 							{
@@ -107,15 +105,6 @@ func TestCompiledCollaboration_RoundTrip(t *testing.T) {
 							},
 						},
 						{
-							CallPool: &dsl.CallPoolStep{Pool: "Issue RFQ"},
-							IOMapping: &dsl.IOMapping{
-								Inputs:  []dsl.IOVar{{Source: "=tenderId", Target: "tender_id"}},
-								Outputs: []dsl.IOVar{{Source: "=result", Target: "outcome"}},
-							},
-							Extras:       map[string]string{"exec.priority": "high"},
-							MessagePaths: []dsl.MessagePath{{MessageName: "notify", Interrupting: false, Terminates: true}},
-						},
-						{
 							CallPlan: &dsl.CallPlanStep{
 								NodeID:       "Activity_call1",
 								Name:         "Prepare response",
@@ -126,6 +115,12 @@ func TestCompiledCollaboration_RoundTrip(t *testing.T) {
 								TimerPaths:   []dsl.TimerPath{{Duration: "P5D", Interrupting: true, TargetDept: "escalation"}, {Duration: "P9D", Interrupting: true, Terminates: true}},
 								MessagePaths: []dsl.MessagePath{{MessageName: "withdraw", Interrupting: true, TargetDept: "ops"}},
 							},
+							IOMapping: &dsl.IOMapping{
+								Inputs:  []dsl.IOVar{{Source: "=tenderId", Target: "tender_id"}},
+								Outputs: []dsl.IOVar{{Source: "=result", Target: "outcome"}},
+							},
+							Extras:       map[string]string{"exec.priority": "high"},
+							MessagePaths: []dsl.MessagePath{{MessageName: "notify", Interrupting: false, Terminates: true}},
 						},
 					},
 				},
@@ -133,9 +128,6 @@ func TestCompiledCollaboration_RoundTrip(t *testing.T) {
 					{Kind: "dataStoreReference", ID: "DataStoreReference_1", Name: "Archive"},
 				},
 			},
-		},
-		Messages: []dsl.MessageDef{
-			{Name: "RFQ", SourcePlan: "Issue RFQ", TargetPlan: "Bid-No-Bid Review"},
 		},
 	}
 

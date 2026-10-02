@@ -52,7 +52,7 @@ func reviewModule() *dsl.CompiledPlan {
 }
 
 func collab(plans ...*dsl.CompiledPlan) *dsl.CompiledCollaboration {
-	return &dsl.CompiledCollaboration{MainPlan: plans[0].Name, Plans: plans, Messages: []dsl.MessageDef{}, SchemaVersion: dsl.CurrentSchemaVersion}
+	return &dsl.CompiledCollaboration{MainPlan: plans[0].Name, Plans: plans, SchemaVersion: dsl.CurrentSchemaVersion}
 }
 
 func expand(t *testing.T, c *dsl.CompiledCollaboration) *dsl.CompiledPlan {
@@ -409,7 +409,6 @@ func TestExpandCalls_ExpandsEveryPlan(t *testing.T) {
 
 func TestExpandCalls_KeepsNamesAndDepartmentMetadata(t *testing.T) {
 	module := reviewModule()
-	module.Departments[1].Ignore = true
 	module.Departments[1].Props = map[string]string{"sla": "24h"}
 	call := callStep("CA_1", "review@v1", map[string]string{"Sender": "Ops"})
 	call.CallPlan.Name = "Prepare response"
@@ -419,8 +418,8 @@ func TestExpandCalls_KeepsNamesAndDepartmentMetadata(t *testing.T) {
 		t.Errorf("sub_workflow name = %q, want the call's name", got)
 	}
 	legal := dept(t, main, "CA_1::Legal")
-	if !legal.Ignore || legal.Props["sla"] != "24h" {
-		t.Errorf("cloned department lost ignore/props: %+v", legal)
+	if legal.Props["sla"] != "24h" {
+		t.Errorf("cloned department lost its props: %+v", legal)
 	}
 }
 

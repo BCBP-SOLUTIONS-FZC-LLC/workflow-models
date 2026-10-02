@@ -6,7 +6,8 @@ package enums
 // authoring UI's palette (definition LLD §4.1.2, §3.3.20).
 // An element name absent from this list is rejected by the compiler, not
 // silently passed through. The blank lines below group entries by role
-// (collaboration/process structure, task/gateway/event types, boundary and
+// (collaboration/process structure and the diagram-only decorations a modeler
+// draws, task/gateway/event types, boundary and
 // intermediate event definitions, flow/expression wiring) for readability
 // only — membership, not position, is what's enforced.
 var AllowedBPMNElements = []string{
@@ -20,6 +21,15 @@ var AllowedBPMNElements = []string{
 	"error",
 	"message",
 	"dataStoreReference",
+	"dataInputAssociation",
+	"dataOutputAssociation",
+	"sourceRef",
+	"targetRef",
+	"textAnnotation",
+	"text",
+	"association",
+	"property",
+	"documentation",
 
 	"task",
 	"startEvent",

@@ -7,14 +7,12 @@ type ExecutionPlan struct {
 }
 
 // ExecutionStep is a single control-flow node in an ExecutionPlan — exactly
-// one of Sequential, Parallel, Exclusive, SubWorkflow, CallPool, or CallPlan
-// is set.
+// one of Sequential, Parallel, Exclusive, SubWorkflow, or CallPlan is set.
 type ExecutionStep struct {
 	Sequential   []string          `json:"sequential,omitempty"`
 	Parallel     []ParallelBranch  `json:"parallel,omitempty"`
 	Exclusive    []ExclusiveBranch `json:"exclusive,omitempty"`
 	SubWorkflow  *SubWorkflowStep  `json:"sub_workflow,omitempty"`
-	CallPool     *CallPoolStep     `json:"call_pool,omitempty"`
 	CallPlan     *CallPlanStep     `json:"call_plan,omitempty"`
 	IOMapping    *IOMapping        `json:"io_mapping,omitempty"`
 	Extras       map[string]string `json:"extras,omitempty"`
@@ -32,7 +30,7 @@ type MessagePath struct {
 }
 
 // IOMapping carries variable input/output declarations: on an ExecutionStep
-// for a callActivity or pool call, and on a connector-typed StageDef, where
+// for a callActivity, and on a connector-typed StageDef, where
 // Inputs are resolved against the task's context at creation time and Outputs
 // against the connector's own result.
 type IOMapping struct {
@@ -41,7 +39,7 @@ type IOMapping struct {
 }
 
 // IOVar maps one input or output variable between a caller and whatever it
-// is calling — a sub-workflow/pool (ExecutionStep) or a connector
+// is calling — a sub-workflow (ExecutionStep) or a connector
 // (StageDef).
 type IOVar struct {
 	Source string `json:"source"`
@@ -53,12 +51,6 @@ type IOVar struct {
 type ParallelBranch struct {
 	DeptID string          `json:"dept"`
 	Steps  []ExecutionStep `json:"steps"`
-}
-
-// CallPoolStep represents a step where the main pool hands control to another
-// compiled pool (Temporal child workflow). Only the main pool may emit this.
-type CallPoolStep struct {
-	Pool string `json:"pool"`
 }
 
 // ExclusiveBranch is one conditional branch (or back-edge revert) within an

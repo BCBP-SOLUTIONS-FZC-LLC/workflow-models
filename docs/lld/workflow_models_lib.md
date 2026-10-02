@@ -10,7 +10,7 @@
 
 1. Overview & Status
 2. Package Reference: `pkg/dsl`
-   - 2.1 `CompiledCollaboration` / `MessageDef`
+   - 2.1 `CompiledCollaboration`
    - 2.2 `CompiledPlan` / `DepartmentDef` / `VisualElementDef`
    - 2.3 `StageDef` / `BoundaryTimer`
    - 2.4 `ExecutionPlan` / `ExecutionStep`
@@ -47,7 +47,7 @@ Go 1.26, zero external dependencies. Two packages, `pkg/dsl` and `pkg/enums`, pl
 
 Both failure classes are the same shape: a second source of truth kept in sync by discipline. Publishing the real Go structs as an importable module turns a silent runtime surprise into a compile-time error the moment a consumer bumps the dependency.
 
-**Status.** Pre-release `v1.4.0-rc.1`, pinned by Definition Service and Execution Service. Both reference the module's types directly (§8).
+**Status.** Pre-release `v1.4.0-rc.2`, pinned by Definition Service and Execution Service. Both reference the module's types directly (§8).
 
 **Relationship to the internal HTTP contracts.** The calls between the two services — the compiled-plan read, the archive guard and the pause of a removed member's tasks — are specified in OpenAPI documents each service owns and both test against (`definition_service.md` §3.4, `execution_service.md` §5.3). This module doesn't wrap or duplicate them; it holds the plan's own shape.
 
@@ -59,41 +59,31 @@ Both failure classes are the same shape: a second source of truth kept in sync b
 
 The compiled-plan DSL, moved field-for-field from Definition's own `internal/core/domain/compiled_plan.go` (byte-identical to the module's copy). Genuinely shared: Definition produces every field below, Execution consumes every field below — this is why the DSL, unlike events, gets the whole type family rather than a curated subset (§5).
 
-### 2.1 `CompiledCollaboration` / `MessageDef`
+### 2.1 `CompiledCollaboration`
 
-The top-level entry point — one `CompiledCollaboration` per BPMN collaboration diagram, wrapping every participant pool as a `CompiledPlan`.
-
-| Field | Type | JSON tag | Purpose |
-| --- | --- | --- | --- |
-| `MainPlan` | `string` | `main_plan` | Name of the primary pool — the Temporal workflow entry point. |
-| `Plans` | `[]*CompiledPlan` | `plans` | Every compiled pool, including pools marked `Ignored` (§2.2), and every called process, compiled once and referenced by `CallPlanStep` (§2.5) — never filtered out at this level. |
-| `Messages` | `[]MessageDef` | `messages` | Every named BPMN message crossing pool boundaries in this collaboration. |
-
-`MessageDef`:
+The top-level entry point: one per published workflow version. A BPMN document runs one pool; outside parties' pools produce nothing (definition LLD §4.1.2).
 
 | Field | Type | JSON tag | Purpose |
 | --- | --- | --- | --- |
-| `Name` | `string` | `name` | The BPMN message name, the correlation key both a `sendTask` and its matching `receiveTask` reference. |
-| `SourcePlan` | `string` | `source_plan` | Process name of the sending participant. |
-| `TargetPlan` | `string` | `target_plan` | Process name of the receiving participant. |
+| `MainPlan` | `string` | `main_plan` | Name of the plan that runs — the Temporal workflow entry point. |
+| `Plans` | `[]*CompiledPlan` | `plans` | The main plan and every called process, compiled once and referenced by `CallPlanStep` (§2.5). |
 
-**Definition populates it via** the collaboration-level compile step (`internal/bpmn_compiler/bpmncore/compile.go`), which assembles one `CompiledPlan` per participant pool and collects every `bpmn:messageFlow` into `Messages`.
+**Definition populates it via** `CompileForPublish` (`internal/bpmn_compiler/compiler.go`), which compiles the document's one runnable process and each process it calls.
 
-**Execution consumes it via** `GetCompiledPlanActivity`, the workflow function's first activity (`execution_service.md` §2.1, Compiled-Plan DSL Shape) — fetched exactly once per instance and held for the workflow's entire lifetime, which is what makes an in-flight instance immune to a later republish of the same template. `MainPlan` selects which `CompiledPlan` the root workflow function drives; `Messages` backs the instance-wide, node-keyed message-correlation buffer that matches a `sendTask` to its `receiveTask`, including across sibling parallel branches.
+**Execution consumes it via** `GetCompiledPlanActivity`, the workflow function's first activity (`execution_service.md` §2.1, Compiled-Plan DSL Shape) — fetched exactly once per instance and held for the workflow's entire lifetime, which is what makes an in-flight instance immune to a later republish of the same template. `MainPlan` selects which `CompiledPlan` the root workflow function drives. Messages correlate by the names on the stages and paths themselves (`StageDef.Extras["message"]`, `MessagePath.MessageName`).
 
 `SchemaVersion int`: major DSL schema version, stamped on `CompiledCollaboration` by the compiler at publish time (§6.1). Major only — minor/patch revisions are additive-by-convention and never need a discriminator. Consumed by `execution_service.md` §2.5's Factory/Strategy compatibility layer.
 
 ### 2.2 `CompiledPlan` / `DepartmentDef` / `VisualElementDef`
 
-One `CompiledPlan` per BPMN pool/participant.
+One `CompiledPlan` per process that runs: the workflow's, and each module's.
 
 `CompiledPlan`:
 
 | Field | Type | JSON tag | Purpose |
 | --- | --- | --- | --- |
-| `Name` | `string` | `name` | Pool name — matches a `SourcePlan`/`TargetPlan`/`MainPlan` reference. |
+| `Name` | `string` | `name` | Process name — matches `MainPlan` or a `CallPlanStep.Plan`. |
 | `TaskQueue` | `string` | `task_queue,omitempty` | Intended to resolve the Temporal task queue this pool's instances run on, tier-routed from the tenant's plan (`wf-queue-default` vs. an isolated `wf-queue-<tenant_uuid>`). |
-| `Ignored` | `bool` | `ignored,omitempty` | True for a pool the modeler marked out of scope — produces an admin-stub task, not real work. |
 | `Departments` | `[]DepartmentDef` | `departments` | Every lane segment in this pool: a stretch of one lane on one path. |
 | `Execution` | `ExecutionPlan` | `execution` | The step sequence driving the workflow function (§2.4). |
 | `VisualElements` | `[]VisualElementDef` | `visual_elements,omitempty` | Diagram-only elements with no execution semantics. |
@@ -105,7 +95,6 @@ One `CompiledPlan` per BPMN pool/participant.
 | `ID` | `string` | `id` | The segment's plan-scoped key: the lane's name for its first segment, `<lane>~<n>` for the n-th. |
 | `Label` | `string` | `label` | Human-readable lane name. |
 | `IAMDepartmentID` | `string` | `iam_department_id,omitempty` | Meant to carry a real IAM department UUID. |
-| `Ignore` | `bool` | `ignore,omitempty` | Lane marked out of scope. |
 | `Props` | `map[string]string` | `props,omitempty` | Free-form lane-level properties. |
 | `Stages` | `[]StageDef` | `stages` | The segment's tasks, in the order the flow reaches them (§2.3). |
 
@@ -117,9 +106,9 @@ One `CompiledPlan` per BPMN pool/participant.
 | `ID` | `string` | `id` | BPMN element ID. |
 | `Name` | `string` | `name,omitempty` | Human-readable label. |
 
-**Definition populates it via** `bpmncore/compile.go`'s per-pool assembly and `bpmncore/state.go`'s lane segments (`SegmentOf`); `bpmncore/qualify.go` prefixes a collaboration pool's department IDs. A segment is a stretch of one lane on one path. The flow starts a new segment when it enters a lane from another lane, a gateway, a subprocess or a call, and a gateway's branch and a boundary's path start their own, so running a department's stages in order runs the tasks in the order the arrows point. `ID` is the lane's `name` for the lane's first segment and `<lane>~<n>` for the n-th; lane names cannot contain `~`, `/` or `::`. `Label` is the lane's `name` and `IAMDepartmentID` the lane's `dept_id` property (`bpmncore/call.go`'s `LaneDeptID`). A module lane without `dept_id` is an open slot whose `IAMDepartmentID` a calling `CallPlanStep` supplies (§2.6), with one binding for each of the lane's segments. `CompiledPlan.TaskQueue` is documented intent only — no compiler logic resolves a tenant's plan tier into a queue name yet (Appendix B).
+**Definition populates it via** `bpmncore/compile.go`'s per-pool assembly and `bpmncore/state.go`'s lane segments (`SegmentOf`). A lane marked ignore is an outside party's: its tasks compile to nothing, so it has no department. A segment is a stretch of one lane on one path. The flow starts a new segment when it enters a lane from another lane, a gateway, a subprocess or a call, and a gateway's branch and a boundary's path start their own, so running a department's stages in order runs the tasks in the order the arrows point. `ID` is the lane's `name` for the lane's first segment and `<lane>~<n>` for the n-th; lane names cannot contain `~`, `/` or `::`. `Label` is the lane's `name` and `IAMDepartmentID` the lane's `dept_id` property (`bpmncore/call.go`'s `LaneDeptID`). A module lane without `dept_id` is an open slot whose `IAMDepartmentID` a calling `CallPlanStep` supplies (§2.6), with one binding for each of the lane's segments. `CompiledPlan.TaskQueue` is documented intent only — no compiler logic resolves a tenant's plan tier into a queue name yet (Appendix B).
 
-**Execution consumes it via** `execution_service.md` §3.2 (Worker Topology & Task-Queue Registration) for `TaskQueue` (snapshotted once at instantiation onto `workflow_instance.task_queue`); `Ignored` drives the ignored-pool admin-stub dispatch (§8.2's worked example); `IAMDepartmentID` is the field Execution's own `workflow_task.department_id uuid NOT NULL` column depends on and currently cannot populate correctly until Definition ships a real capture — a confirmed cross-repo blocker (Appendix B), not a mere type mismatch.
+**Execution consumes it via** `execution_service.md` §3.2 (Worker Topology & Task-Queue Registration) for `TaskQueue` (snapshotted once at instantiation onto `workflow_instance.task_queue`); `IAMDepartmentID` is the field Execution's own `workflow_task.department_id uuid NOT NULL` column depends on and currently cannot populate correctly until Definition ships a real capture — a confirmed cross-repo blocker (Appendix B), not a mere type mismatch.
 
 ### 2.3 `StageDef` / `BoundaryTimer`
 
@@ -141,7 +130,7 @@ One `StageDef` per task/stage in a department's lane segment.
 | `Extras` | `map[string]string` | `extras,omitempty` | Free-form bag (§7). |
 | `IsZeebeUserTask` | `bool` | `is_zeebe_user_task,omitempty` | Zeebe-modeler provenance marker. |
 | `ConnectorType` | `string` | `connector_type,omitempty` | Set when `Type` is `enums.StageTypeConnector` — the connector's registered name (e.g. `storage`, `send-email`, `rest-call`), parsed once at compile time from the BPMN `<zeebe:taskDefinition type="connector:<name>"/>` attribute's `connector:` prefix. A dedicated field, not folded into the compound `Type` string, so neither side ever re-parses a prefix — same rationale as `department_id` being a real column (`execution_service.md` §4.3). |
-| `IOMapping` | `*IOMapping` | `io_mapping,omitempty` | Input/output variable mapping for a connector-typed stage, from the element's `<zeebe:ioMapping>` — reuses the exact same `IOMapping`/`IOVar` shape `CallPoolStep` already uses (§2.5), not reinvented. `nil` for every non-connector stage type. |
+| `IOMapping` | `*IOMapping` | `io_mapping,omitempty` | Input/output variable mapping for a connector-typed stage, from the element's `<zeebe:ioMapping>` — reuses the exact same `IOMapping`/`IOVar` shape an `ExecutionStep` uses (§2.5), not reinvented. `nil` for every non-connector stage type. |
 
 `BoundaryTimer`:
 
@@ -156,7 +145,7 @@ One `StageDef` per task/stage in a department's lane segment.
 
 **Definition populates it via** a small stage-type registry, `internal/bpmn_compiler/stage_types.go`'s `defaultStageTypes()` map (`"prep"`→`PrepActivity`, `"review"`→`ReviewActivity`, `"approve"`→`ApproveActivity`), plus `element/send_task.go`/`element/receive_task.go` for the `send_task`/`receive_task` types. `Name` is the task element's `name`. `IsZeebeUserTask` is set by the parser but has no compiler-side consumer — confirmed inert, write-only (Appendix B). `ConnectorType`/`IOMapping` are populated by the `serviceTask` element handler (`definition_service.md` §4.1.2/§4.1.3.3) — the same handler that produces `Type = enums.StageTypeConnector`.
 
-**Execution consumes it via** `execution_service.md` §2.4 (Stage-Type Dispatch) for `Type`/`Activity`; §2.8 (SLA Semantics) for `DueDate`/`FollowUpDate`, raced against the task's own resolution in a Temporal `Selector`; §2.2 (Boundary Events) for `BoundaryTimer` → `workflow.NewTimer`; §4.3 for `ConnectorType`, snapshotted onto `workflow_task.connector_type` at task creation. `IOMapping.Inputs` applies the same entry-only way `CallPoolStep.IOMapping` already does (§2.5) — copied into `context_json` before the task is created; `IOMapping.Outputs` is interpreted downstream, by whichever process runs the connector worker (`workflow_connectors.md` §6.5), to decide which of its result fields become which `context_json` variables when it calls the existing task-completion path — Execution itself does not interpret `Outputs`.
+**Execution consumes it via** `execution_service.md` §2.4 (Stage-Type Dispatch) for `Type`/`Activity`; §2.8 (SLA Semantics) for `DueDate`/`FollowUpDate`, raced against the task's own resolution in a Temporal `Selector`; §2.2 (Boundary Events) for `BoundaryTimer` → `workflow.NewTimer`; §4.3 for `ConnectorType`, snapshotted onto `workflow_task.connector_type` at task creation. `IOMapping.Inputs` applies the same entry-only way a call step's `IOMapping` does (§2.5) — copied into `context_json` before the task is created; `IOMapping.Outputs` is interpreted downstream, by whichever process runs the connector worker (`workflow_connectors.md` §6.5), to decide which of its result fields become which `context_json` variables when it calls the existing task-completion path — Execution itself does not interpret `Outputs`.
 
 ### 2.4 `ExecutionPlan` / `ExecutionStep`
 
@@ -172,15 +161,14 @@ One `StageDef` per task/stage in a department's lane segment.
 | `Parallel` | `[]ParallelBranch` | `parallel,omitempty` | Concurrent branches (§2.5). |
 | `Exclusive` | `[]ExclusiveBranch` | `exclusive,omitempty` | Conditional branches (§2.5). |
 | `SubWorkflow` | `*SubWorkflowStep` | `sub_workflow,omitempty` | A nested BPMN subprocess (§2.5). |
-| `CallPool` | `*CallPoolStep` | `call_pool,omitempty` | A hand-off to another compiled pool (§2.5). |
 | `CallPlan` | `*CallPlanStep` | `call_plan,omitempty` | A call to another plan of the collaboration: a `callActivity` (§2.5, §2.6). |
 | `IOMapping` | `*IOMapping` | `io_mapping,omitempty` | Variable input/output declarations (§2.5). |
 | `Extras` | `map[string]string` | `extras,omitempty` | Free-form bag (§7). |
 | `MessagePaths` | `[]MessagePath` | `message_paths,omitempty` | Message boundary events attached to this step (§2.5). |
 
-**Definition populates it via** the graph-walk assembly across `bpmncore/{traverse,compile,state,qualify}.go` — each BPMN control-flow construct (sequence flow, gateway, subprocess, call activity) emits exactly one `ExecutionStep` with exactly one of the above fields set.
+**Definition populates it via** the graph-walk assembly across `bpmncore/{traverse,compile,state}.go` — each BPMN control-flow construct (sequence flow, gateway, subprocess, call activity) emits exactly one `ExecutionStep` with exactly one of the above fields set.
 
-**Execution consumes it via** `runSteps`, the workflow function's execution algorithm (`execution_service.md` §2.5, Workflow-Function Execution Algorithm) — one non-nil field per step drives dispatch to the matching handler (sequential dispatch, parallel-branch fan-out, exclusive-gateway evaluation, subworkflow/call-pool recursion). Execution runs `ExpandCalls` (§2.6) on the fetched collaboration first, so it never dispatches a `CallPlan` step itself.
+**Execution consumes it via** `runSteps`, the workflow function's execution algorithm (`execution_service.md` §2.5, Workflow-Function Execution Algorithm) — one non-nil field per step drives dispatch to the matching handler (sequential dispatch, parallel-branch fan-out, exclusive-gateway evaluation, subworkflow recursion). Execution runs `ExpandCalls` (§2.6) on the fetched collaboration first, so it never dispatches a `CallPlan` step itself.
 
 ### 2.5 Branch & Step Variants
 
@@ -237,15 +225,7 @@ Execution: `execution_service.md` §2.6 (Exclusive-Gateway Evaluation) — a sma
 | `TargetDept` | `string` | `target_dept,omitempty` | Department the path routes to on fire. |
 | `Terminates` | `bool` | `terminates,omitempty` | The path ends at an end event (as on `BoundaryTimer`, §2.3). |
 
-Execution: `execution_service.md` §2.3 (subProcess, CallPool, and callActivity Constructs) for `SubWorkflowStep`'s nested dispatch, and the same §2.2 boundary-event machinery as `StageDef.BoundaryTimer`/`BoundaryMessage` for `ErrorPath`/`TimerPath`/`MessagePath` attached at the subprocess level.
-
-`CallPoolStep`:
-
-| Field | Type | JSON tag | Purpose |
-| --- | --- | --- | --- |
-| `Pool` | `string` | `pool` | Name of the compiled pool control hands off to. |
-
-Execution: §2.3 there — a Temporal child workflow dispatch; only the main pool may emit this.
+Execution: `execution_service.md` §2.3 (subProcess and callActivity Constructs) for `SubWorkflowStep`'s nested dispatch, and the same §2.2 boundary-event machinery as `StageDef.BoundaryTimer`/`BoundaryMessage` for `ErrorPath`/`TimerPath`/`MessagePath` attached at the subprocess level.
 
 `CallPlanStep`:
 
@@ -275,14 +255,14 @@ Execution: applied **entry-only** — inputs are copied into `context_json` befo
 
 | Field | Type | JSON tag | Purpose |
 | --- | --- | --- | --- |
-| `MessageName` | `string` | `message_name` | Correlates to a `MessageDef.Name` at the collaboration level (§2.1). |
+| `MessageName` | `string` | `message_name` | The message the boundary waits for. |
 | `Interrupting` | `bool` | `interrupting` | Whether receipt cancels the attached task/subprocess. |
 | `TargetDept` | `string` | `target_dept,omitempty` | Department the message routes to on receipt. |
 | `Terminates` | `bool` | `terminates,omitempty` | The path ends at an end event (as on `BoundaryTimer`, §2.3). |
 
 Execution: the instance-wide, node-keyed message-correlation buffer (§2.1 above), including cross-sibling-parallel-branch correlation, with one accepted residual — a consumed message survives a force-back past its sending branch; the re-fire becomes a fresh pending entry (`execution_service.md` §8.2's worked example).
 
-**Definition populates every struct in this subsection via** the same `bpmncore/{traverse,compile,state,qualify}.go` graph walk as §2.4, plus `element/subprocess.go` for `SubWorkflowStep`, `element/call_activity.go` for `CallPlanStep`, and `element/gateway_xor.go` for `ExclusiveBranch`.
+**Definition populates every struct in this subsection via** the same `bpmncore/{traverse,compile,state}.go` graph walk as §2.4, plus `element/subprocess.go` for `SubWorkflowStep`, `element/call_activity.go` for `CallPlanStep`, and `element/gateway_xor.go` for `ExclusiveBranch`.
 
 ### 2.6 `ExpandCalls`
 
@@ -292,7 +272,7 @@ Execution: the instance-wide, node-keyed message-correlation buffer (§2.1 above
 - **Departments.** Each department of the called plan is cloned into the calling plan with the ID `<NodeID>::<department ID>`. A nested call composes the prefix, so a department reached through two calls is `<outer NodeID>::<inner NodeID>::<department ID>`. `CallScopeSeparator` holds `"::"`.
   - A department bound in `Departments` takes the bound department's `Label` and `IAMDepartmentID`.
   - An unbound department keeps its own.
-  - `Ignore`, `Props` and the stages are copied. A stage named in `Assignees` gets that user as its only default assignee.
+  - `Props` and the stages are copied. A stage named in `Assignees` gets that user as its only default assignee.
 - **Assignees down the call path.** A call's `Assignees` key with `::` in it is handed to the inner call it names, with the rest of the key, and wins over that call's own `Assignees`. The outermost call can therefore name the user of any task beneath it.
 - **References.** Every department reference inside the called steps is rewritten to the cloned IDs: `Sequential`, `ParallelBranch.DeptID`, `ExclusiveBranch.Target`/`RevertToDept`, the `TargetDept` of every path, and each stage's `BoundaryTimer`/`BoundaryMessage`. The call's own boundary paths keep the calling plan's departments. A boundary that terminates keeps no target.
 - **Identity.** A task inside a call has the node key `<NodeID>::<department ID>/<task NodeID>`. Two calls to the same plan therefore give distinct tasks.
@@ -324,7 +304,7 @@ Reserved for event payloads shared by both services. No event is shared today (�
 
 ## 4. Package Reference: `pkg/enums`
 
-Holds the six `StageType` string constants `pkg/dsl` needs, and `AllowedBPMNElements`, the Tier-1 BPMN element allowlist Definition's compiler enforces.
+Holds the six `StageType` string constants `pkg/dsl` needs, and `AllowedBPMNElements`, the Tier-1 BPMN element allowlist Definition's compiler enforces. The list includes the diagram-only elements a modeler draws, which compile to nothing: `textAnnotation` with its `text`, `association`, `documentation`, and data associations with their `sourceRef`/`targetRef` and the `property` placeholder on their task.
 
 ### 4.1 `StageType`
 
@@ -438,11 +418,11 @@ workflow-models/
 ├── .gitignore
 └── pkg/
     ├── dsl/
-    │   ├── collaboration.go        CompiledCollaboration, MessageDef
+    │   ├── collaboration.go        CompiledCollaboration
     │   ├── plan.go                 CompiledPlan, DepartmentDef, VisualElementDef
     │   ├── stage.go                StageDef, BoundaryTimer
     │   ├── execution_step.go       ExecutionPlan, ExecutionStep, ParallelBranch, ExclusiveBranch,
-    │   │                           SubWorkflowStep, CallPoolStep, CallPlanStep, IOMapping, IOVar,
+    │   │                           SubWorkflowStep, CallPlanStep, IOMapping, IOVar,
     │   │                           MessagePath, ErrorPath, TimerPath
     │   ├── expand.go               ExpandCalls, ErrPlanTooLarge, CallScopeSeparator
     │   ├── expand_test.go          ExpandCalls behaviour (package dsl_test)
@@ -509,7 +489,7 @@ That doc made the original DSL-half decision (shared module, schema versioning, 
 | 8 | Definition migrates via direct reference to the module, not a type alias | Direct reference gives one source of truth for the type with no indirection layer through `domain`, at the cost of a wider one-time diff — 247 occurrences across 27 files, versus the alias approach's 2-file change (`compiled_plan.go`/`eventpayloads.go`). `.go-arch-lint.yml`'s import-direction rules need no edit either way: `depOnAnyVendor: true` leaves vendored-module imports unrestricted regardless of which internal component does the importing (§8). |
 | 9 | `Extras`/`IOMapping` unknown-key decode policy is asymmetric by prefix, not uniform | An unrecognized `exec.`-prefixed key is routing/gating semantics this build predates and must hard-fail; any other unrecognized key is a Zeebe custom property that must soft-ignore, since hard-failing on it would block Definition from adding a UI-only or audit-only property (§7). |
 | 10 | Unknown `ExecutionStep` variant is a hard error; unknown `StageDef.Type` tolerates | A missing control-flow discriminator is workflow corruption with no safe default; a new stage type beyond `prep`/`review`/`approve` is an intentional, forward-compat product surface IAM may extend, matching the compiler's own `UNKNOWN_STAGE_TYPE` warning-not-error policy (§7). |
-| 11 | `StageDef.ConnectorType` is a dedicated field, not parsed out of a compound `Type` string (`"connector:<name>"`) at runtime | Definition Service already parses the BPMN `connector:` prefix once, at compile time (`definition_service.md` §4.1.2); carrying the raw compound string forward would make Execution Service re-parse it, a repeated-parsing pattern the module has no other precedent for. Matches `department_id`'s own "needs efficient filtering, deserves a real field" precedent. `StageDef.IOMapping` reuses `CallPoolStep`'s existing `IOMapping`/`IOVar` shape rather than inventing a second one, for the same reason `ExecutionStep.IOMapping` itself was reused instead of a bespoke shape when it was first introduced. |
+| 11 | `StageDef.ConnectorType` is a dedicated field, not parsed out of a compound `Type` string (`"connector:<name>"`) at runtime | Definition Service already parses the BPMN `connector:` prefix once, at compile time (`definition_service.md` §4.1.2); carrying the raw compound string forward would make Execution Service re-parse it, a repeated-parsing pattern the module has no other precedent for. Matches `department_id`'s own "needs efficient filtering, deserves a real field" precedent. `StageDef.IOMapping` reuses `ExecutionStep`'s existing `IOMapping`/`IOVar` shape rather than inventing a second one, for the same reason `ExecutionStep.IOMapping` itself was reused instead of a bespoke shape when it was first introduced. |
 
 ## Appendix B: Open Items
 
@@ -521,7 +501,7 @@ That doc made the original DSL-half decision (shared module, schema versioning, 
 | This module's own event `.v2` dual-publish window | Execution team | **N/A** — moot: `pkg/events` was retired (rev 2.4, §3) before this was ever needed; Execution's own outbound catalogue's 30-day precedent (`execution_service.md` §6.8) remains the number to carry over if an event is ever added back (§6.2) |
 | `CompiledPlan.TaskQueue` tier-based routing logic | Definition Service | Documented intent only, zero compiler logic exists (§2.2) |
 | `DepartmentDef.IAMDepartmentID` never populated | Definition Service | Hard cross-repo blocker — Execution's `workflow_task.department_id uuid NOT NULL` can't be populated until Definition reads a real IAM department UUID from a BPMN lane's `extensionElements` (§2.2) |
-| Module tag/publish (`v1.0.0`) | Definition Service | `v1.4.0-rc.1` pre-release tagged and pinned by both services; `v1.0.0` not yet cut (§8) |
+| Module tag/publish (`v1.0.0`) | Definition Service | `v1.4.0-rc.2` pre-release tagged and pinned by both services; `v1.0.0` not yet cut (§8) |
 
 ### Appendix B.1: Repo Readiness Checklist
 
@@ -563,3 +543,4 @@ One row per §12 gap — Blocker (must exist before the `v1.0.0` tag) or Deferre
 | 2.12 | 2026-10-01 | **Node keys, human tasks and task names are shared** (§2.3). `NodeKey` and `StageDef.CreatesHumanTask` are the one definition of a stage's key and of whether it gets an assignee; Definition and Execution each carried their own copies. `StageDef.Name` carries the task's name, which Definition's node and module-contract reads return; the goldens are re-made with it. §1 and Appendix B name the release. Released as `v1.3.0-rc.3`. |
 | 2.13 | 2026-10-01 | **The gRPC link is gone** (§1, §6.1, §11, Appendix B). The two services call each other over internal HTTP, each endpoint specified in an OpenAPI document both test against (`definition_service.md` §3.4, `execution_service.md` §5.3). The compiled-plan read returns the plan as a JSON object and no separate `dsl_schema_version`: `CompiledCollaboration.SchemaVersion` is the one source of the schema version. |
 | 2.14 | 2026-10-02 | **Exclusive branches carry their steps; departments are lane segments** (§1, §2.2, §2.3, §2.5, §2.6, §2.7, Appendix B). `ExclusiveBranch.Steps` holds a forward branch's work up to the join and is run instead of `Target`: a branch could name only one department and stage, so a call or subprocess on it, a second lane, or an inner gateway had no place in the plan. `ExpandCalls` expands calls inside branch steps, follows `Assignees` paths through them, and checks their boundaries. A `DepartmentDef` is a stretch of one lane on one path, keyed by the lane's name, then `<lane>~<n>`: a department was a whole lane, and running it ran every task in the lane, so a flow returning to a lane, or two branches in one lane, ran tasks out of the order the arrows give. New golden `FlowOrder` (§2.7). §1 and Appendix B name the release. Released as `v1.4.0-rc.1`. |
+| 2.15 | 2026-10-02 | **One pool runs** (§1, §2.1, §2.2, §2.4, §2.5, §2.6, §4, Appendices A and B). Definition compiles a document's one runnable pool and the processes it calls; outside parties' pools and lanes produce nothing. The collaboration's `messages`, the plan's `ignored`, the department's `ignore` and the step's `call_pool` are removed: nothing produced them but the deleted collaboration compile, and the call-pool admin stub they drove is gone from the Execution Service. The allowed element list admits the diagram-only `textAnnotation`, `text`, `association`, `documentation`, `property`, `dataInputAssociation`, `dataOutputAssociation`, `sourceRef` and `targetRef`. Tagged `v1.4.0-rc.2`. |

@@ -41,18 +41,18 @@ depends on anything else in this module.
 ### `pkg/dsl`
 
 The compiled-plan DSL: `CompiledCollaboration` (root) → `CompiledPlan` (one
-per BPMN pool) → `DepartmentDef` (one per lane segment) → `StageDef` (one per task)
+per process that runs: the workflow's and each module's) → `DepartmentDef` (one per lane segment) → `StageDef` (one per task)
 → `ExecutionPlan`/`ExecutionStep` (control flow). See design doc §2 for the
 full field-by-field reference.
 
 | Type | Role |
 |------|------|
-| `CompiledCollaboration` | Root artifact — main pool, every compiled pool, inter-pool messages |
-| `CompiledPlan` | One compiled BPMN pool |
+| `CompiledCollaboration` | Root artifact — the main plan and each module plan it calls |
+| `CompiledPlan` | One compiled BPMN process |
 | `DepartmentDef` | One stretch of a BPMN lane on one path |
 | `StageDef` | One compiled task/stage |
 | `ExecutionPlan` / `ExecutionStep` | The step sequence driving the workflow function |
-| `ParallelBranch`, `ExclusiveBranch`, `SubWorkflowStep`, `CallPoolStep`, `CallPlanStep` | `ExecutionStep` variants |
+| `ParallelBranch`, `ExclusiveBranch`, `SubWorkflowStep`, `CallPlanStep` | `ExecutionStep` variants |
 | `ExpandCalls` | Turns every `CallPlanStep` into a `SubWorkflowStep` with call-scoped departments, shared so both services derive the same node keys |
 | `NodeKey`, `StageDef.CreatesHumanTask` | A stage's key in both services, and whether it gets an assignee |
 | `IOMapping`, `IOVar`, `MessagePath`, `ErrorPath`, `TimerPath` | Supporting types for boundary events and variable mapping |

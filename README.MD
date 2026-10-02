@@ -37,7 +37,7 @@ graph LR
 
 ## Scope boundary
 
-- `internal/core/domain/compiled_plan.go` in `workflow-definition-service` defines the same types as `pkg/dsl` (`CompiledCollaboration`, `CompiledPlan`, `DepartmentDef`, `StageDef`, `ExecutionPlan`/`ExecutionStep` and its branch/step variants, `MessageDef`) — see [VERSIONING.md](./VERSIONING.md) and the design doc (§8) for the type-alias consolidation this module is the target of.
+- `internal/core/domain/compiled_plan.go` in `workflow-definition-service` defines the same types as `pkg/dsl` (`CompiledCollaboration`, `CompiledPlan`, `DepartmentDef`, `StageDef`, `ExecutionPlan`/`ExecutionStep` and its branch/step variants) — see [VERSIONING.md](./VERSIONING.md) and the design doc (§8) for the type-alias consolidation this module is the target of.
 - Execution's 18 outbound events (`workflow.instance.*`, `workflow.task.*` — e.g. `workflow.instance.paused`, `workflow.task.reassigned`, `workflow.task.sla-breached`) belong to Execution's own domain package; consumers are Audit, Notification, Tender, LLM, and the Dashboard Stream Gateway, not Definition.
 - The 5 IAM-owned inbound events Execution decodes — `DelegationStarted`, `DelegationEnded`, `TenantStateChanged`, `UserDeleted`, `UserAvailabilityChanged` — and their enum values (`initiator`, tenant `status`, delegation `scope`/`ended_reason`, force-route `direction`) live in Execution's own domain package.
 - `platform-events`' `Envelope[T]` is not re-exported here — both services import `platform-events` directly for it.
@@ -121,27 +121,24 @@ CompiledCollaboration                 (root artifact)
  │            │                         │                ├─ ErrorPaths []ErrorPath
  │            │                         │                ├─ TimerPaths []TimerPath
  │            │                         │                └─ MessagePaths []MessagePath
- │            │                         ├─ CallPool  *CallPoolStep
  │            │                         ├─ CallPlan  *CallPlanStep       → a plan in Plans, by name (see ExpandCalls)
  │            │                         ├─ IOMapping *IOMapping → Inputs/Outputs []IOVar
  │            │                         └─ MessagePaths []MessagePath
  │            └─ VisualElements []VisualElementDef
- └─ Messages []MessageDef
 ```
 
 `ExecutionStep` is a struct of mutually exclusive optional fields, not a tagged union — which variant applies is just which field is non-nil.
 
 | Type | Fields |
 | --- | --- |
-| `CompiledCollaboration` | `MainPlan string`, `Plans []*CompiledPlan`, `Messages []MessageDef` |
-| `MessageDef` | `Name`, `SourcePlan`, `TargetPlan` |
-| `CompiledPlan` | `Name`, `TaskQueue string,omitempty`, `Ignored bool,omitempty`, `Departments []DepartmentDef`, `Execution ExecutionPlan`, `VisualElements []VisualElementDef,omitempty` |
+| `CompiledCollaboration` | `MainPlan string`, `Plans []*CompiledPlan`, `SchemaVersion int` |
+| `CompiledPlan` | `Name`, `TaskQueue string,omitempty`, `Departments []DepartmentDef`, `Execution ExecutionPlan`, `VisualElements []VisualElementDef,omitempty` |
 | `VisualElementDef` | `Kind`, `ID`, `Name,omitempty` |
-| `DepartmentDef` | `ID`, `Label`, `IAMDepartmentID string,omitempty`, `Ignore bool,omitempty`, `Props map[string]string,omitempty`, `Stages []StageDef` |
+| `DepartmentDef` | `ID`, `Label`, `IAMDepartmentID string,omitempty`, `Props map[string]string,omitempty`, `Stages []StageDef` |
 | `StageDef` | `Type string` (holds `enums.StageType*` values), `Activity`, `NodeID,omitempty`, `Name,omitempty`, `Role`, `DefaultAssignees []string,omitempty`, `DueDate,omitempty`, `FollowUpDate,omitempty`, `BoundaryTimer *BoundaryTimer,omitempty`, `BoundaryMessage *MessagePath,omitempty`, `EngineNote,omitempty`, `Extras map[string]string,omitempty`, `IsZeebeUserTask bool,omitempty`, `ConnectorType string,omitempty`, `IOMapping *IOMapping,omitempty` |
 | `BoundaryTimer` | `Duration`, `Interrupting bool`, `TargetDept,omitempty`, `Terminates bool,omitempty` |
 | `ExecutionPlan` | `Steps []ExecutionStep` |
-| `ExecutionStep` | `Sequential []string,omitempty`, `Parallel []ParallelBranch,omitempty`, `Exclusive []ExclusiveBranch,omitempty`, `SubWorkflow *SubWorkflowStep,omitempty`, `CallPool *CallPoolStep,omitempty`, `CallPlan *CallPlanStep,omitempty`, `IOMapping *IOMapping,omitempty`, `Extras map[string]string,omitempty`, `MessagePaths []MessagePath,omitempty` |
+| `ExecutionStep` | `Sequential []string,omitempty`, `Parallel []ParallelBranch,omitempty`, `Exclusive []ExclusiveBranch,omitempty`, `SubWorkflow *SubWorkflowStep,omitempty`, `CallPlan *CallPlanStep,omitempty`, `IOMapping *IOMapping,omitempty`, `Extras map[string]string,omitempty`, `MessagePaths []MessagePath,omitempty` |
 | `MessagePath` | `MessageName`, `Interrupting bool`, `TargetDept,omitempty`, `Terminates bool,omitempty` |
 | `IOMapping` | `Inputs []IOVar,omitempty`, `Outputs []IOVar,omitempty` |
 | `IOVar` | `Source`, `Target` |
@@ -150,7 +147,6 @@ CompiledCollaboration                 (root artifact)
 | `SubWorkflowStep` | `NodeID,omitempty`, `Name`, `Plan ExecutionPlan` (recursive), `ErrorPaths []ErrorPath,omitempty`, `TimerPaths []TimerPath,omitempty`, `MessagePaths []MessagePath,omitempty` |
 | `ErrorPath` | `ErrorCode,omitempty`, `ShortCircuit bool` (no omitempty), `TargetDept,omitempty`, `Terminates bool,omitempty` |
 | `TimerPath` | `Duration`, `Interrupting bool`, `TargetDept,omitempty`, `Terminates bool,omitempty` |
-| `CallPoolStep` | `Pool` |
 | `CallPlanStep` | `NodeID`, `Name,omitempty`, `Plan`, `Departments map[string]string,omitempty`, `Assignees map[string]string,omitempty`, `ErrorPaths`/`TimerPaths`/`MessagePaths,omitempty` |
 
 `ExpandCalls(c, maxStages)` returns a copy of a collaboration with every `CallPlan` step replaced by the `SubWorkflowStep` Execution runs, and the called plan's departments cloned into the caller as `<NodeID>::<department>`, bound to the caller's IAM departments. Both services run it, so they agree on node keys. A call's `Assignees` key names a task of the called plan, or a path of calls to one further down (`Review_Check::Check_Task`), the outermost call's entry winning. Every boundary sets exactly one of `TargetDept` and `Terminates`, and `ExpandCalls` refuses one that does not. `ErrPlanTooLarge` reports a plan over `maxStages` stages after expansion. See the design doc §2.6.

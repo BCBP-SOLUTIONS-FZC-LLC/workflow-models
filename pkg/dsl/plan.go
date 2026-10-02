@@ -1,11 +1,10 @@
 package dsl
 
-// CompiledPlan is one compiled BPMN pool: its departments (lanes), its
-// execution plan, and visual metadata.
+// CompiledPlan is one compiled BPMN process, the workflow's or a module's:
+// its departments (lanes), its execution plan, and visual metadata.
 type CompiledPlan struct {
 	Name           string             `json:"name"`
 	TaskQueue      string             `json:"task_queue,omitempty"`
-	Ignored        bool               `json:"ignored,omitempty"`
 	Departments    []DepartmentDef    `json:"departments"`
 	Execution      ExecutionPlan      `json:"execution"`
 	VisualElements []VisualElementDef `json:"visual_elements,omitempty"`
@@ -25,7 +24,6 @@ type DepartmentDef struct {
 	ID              string            `json:"id"`
 	Label           string            `json:"label"`
 	IAMDepartmentID string            `json:"iam_department_id,omitempty"`
-	Ignore          bool              `json:"ignore,omitempty"`
 	Props           map[string]string `json:"props,omitempty"`
 	Stages          []StageDef        `json:"stages"`
 }

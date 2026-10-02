@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0-rc.2] - 2026-10-02
+
+### Removed
+
+- `CompiledCollaboration.Messages` and `MessageDef`, `CompiledPlan.Ignored`, `DepartmentDef.Ignore`, and `ExecutionStep.CallPool` with `CallPoolStep`. A document runs one pool; outside parties' pools and lanes produce nothing, so nothing sets them.
+
+### Changed
+
+- `AllowedBPMNElements` admits the diagram-only elements a modeler draws: `textAnnotation`, `text`, `association`, `documentation`, `property`, `dataInputAssociation`, `dataOutputAssociation`, `sourceRef` and `targetRef`.
+- The goldens no longer carry `"messages": []`.
+
 ## [1.4.0-rc.1] - 2026-10-02
 
 ### Added
