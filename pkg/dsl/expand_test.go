@@ -562,3 +562,56 @@ func TestExpandCalls_RefusesABoundaryThatNeitherTargetsNorTerminates(t *testing.
 		}
 	})
 }
+
+// exclusiveCalling is a main plan whose exclusive step calls review@v1 on its
+// first branch and runs Ops on its second.
+func exclusiveCalling(call dsl.ExecutionStep) *dsl.CompiledPlan {
+	return mainPlan(seq("Engineering"), dsl.ExecutionStep{Exclusive: []dsl.ExclusiveBranch{
+		{ConditionExpression: "$.x == \"y\"", Steps: []dsl.ExecutionStep{call}},
+		{Steps: []dsl.ExecutionStep{seq("Ops")}},
+	}})
+}
+
+func TestExpandCalls_ExpandsACallOnAnExclusiveBranch(t *testing.T) {
+	main := expand(t, collab(exclusiveCalling(callStep("CA", "review@v1", map[string]string{"Sender": "Ops"})), reviewModule()))
+
+	branches := main.Execution.Steps[1].Exclusive
+	sw := subWorkflow(t, branches[0].Steps[0])
+	if got := sw.Plan.Steps[0].Sequential; !reflect.DeepEqual(got, []string{"CA::Sender", "CA::Legal"}) {
+		t.Errorf("the call's steps = %v, want [CA::Sender CA::Legal]", got)
+	}
+	if d := dept(t, main, "CA::Sender"); d.IAMDepartmentID != opsIAM {
+		t.Errorf("CA::Sender's IAM department = %q, want the bound Ops %q", d.IAMDepartmentID, opsIAM)
+	}
+	if got := branches[1].Steps[0].Sequential; !reflect.DeepEqual(got, []string{"Ops"}) {
+		t.Errorf("the second branch's steps = %v, want [Ops]", got)
+	}
+}
+
+func TestExpandCalls_AssigneesReachAModuleCalledOnAnExclusiveBranch(t *testing.T) {
+	outer := &dsl.CompiledPlan{
+		Name:        "outer@v1",
+		Departments: []dsl.DepartmentDef{{ID: "Rev", Label: "Rev", Stages: []dsl.StageDef{stage("Outer_T")}}},
+		Execution: dsl.ExecutionPlan{Steps: []dsl.ExecutionStep{{Exclusive: []dsl.ExclusiveBranch{
+			{ConditionExpression: "$.x == \"y\"", Steps: []dsl.ExecutionStep{callStep("Inner", "review@v1", map[string]string{"Sender": "Rev"})}},
+			{Steps: []dsl.ExecutionStep{seq("Rev")}},
+		}}}},
+	}
+	call := callStep("CA", "outer@v1", map[string]string{"Rev": "Engineering"})
+	call.CallPlan.Assignees = map[string]string{"Inner::Review_Check": "u-picked"}
+
+	main := expand(t, collab(mainPlan(call), outer, reviewModule()))
+
+	if got := dept(t, main, "CA::Inner::Legal").Stages[0].DefaultAssignees; !reflect.DeepEqual(got, []string{"u-picked"}) {
+		t.Errorf("Review_Check's default users = %v, want [u-picked]", got)
+	}
+}
+
+func TestExpandCalls_RefusesABadBoundaryOnAnExclusiveBranch(t *testing.T) {
+	call := callStep("CA", "review@v1", map[string]string{"Sender": "Ops"})
+	call.CallPlan.TimerPaths = []dsl.TimerPath{{Duration: "P1D", Interrupting: true}}
+
+	if _, err := dsl.ExpandCalls(collab(exclusiveCalling(call), reviewModule()), 1000); err == nil {
+		t.Error("ExpandCalls accepted a call boundary on an exclusive branch that neither targets nor terminates")
+	}
+}

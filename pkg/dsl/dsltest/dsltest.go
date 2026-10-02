@@ -55,3 +55,25 @@ var libraryCallBoundaries []byte
 // workflow's message and Process_Review's "review-recalled" share an id in
 // their own documents, and stay distinct.
 func LibraryCallBoundaries() []byte { return bytes.Clone(libraryCallBoundaries) }
+
+// FlowOrderFile is FlowOrder's path inside this package.
+const FlowOrderFile = "testdata/flow_order.json"
+
+//go:embed testdata/flow_order.json
+var flowOrder []byte
+
+// FlowOrder is the stored compiled collaboration of a workflow, "Golden
+// Flow", with two lanes, Engineering and Ops, whose tasks run in the order
+// the flows give, not grouped by lane:
+//
+//   - Draft (Engineering), Check (Ops), then Approve, back in Engineering;
+//   - an exclusive gateway, Route: when the last result's decision is
+//     "review", CA_Review calls Process_Review (as in LibraryCalls), naming
+//     Check_Task's user by the path "Review_Check::Check_Task"; otherwise Fix
+//     (Ops) runs; the branches join;
+//   - a parallel gateway whose two branches, Pack and Bill, are both in Ops;
+//   - then Close, in Engineering.
+//
+// Each stretch of a lane is a department of its own, so Approve's node key is
+// "Engineering~2/Approve" and Close's "Engineering~3/Close".
+func FlowOrder() []byte { return bytes.Clone(flowOrder) }

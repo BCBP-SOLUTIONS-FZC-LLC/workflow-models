@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0-rc.1] - 2026-10-02
+
+### Added
+
+- `ExclusiveBranch.Steps`: a forward branch's work up to the gateway's join, run instead of `Target`.
+- `dsltest.FlowOrder`: a golden whose tasks run in flow order across two lanes, with a return to a lane, a call on an exclusive branch, and a parallel fork whose branches share a lane.
+
+### Changed
+
+- `ExpandCalls` expands calls inside exclusive branch steps, follows `Assignees` paths through them, and checks their boundaries.
+- A `DepartmentDef` is a stretch of one lane on one path, keyed by the lane's name, then `<lane>~<n>`.
+
 ## [1.3.0-rc.3] - 2026-10-01
 
 ### Added

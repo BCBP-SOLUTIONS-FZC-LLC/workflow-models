@@ -74,6 +74,9 @@ type ExclusiveBranch struct {
 	ConditionExpression string `json:"condition_expression"`
 	// Terminates is true when this branch leads directly to an end event.
 	Terminates bool `json:"terminates,omitempty"`
+	// Steps is the work of a forward branch up to the gateway's join. When
+	// set, it is run instead of Target.
+	Steps []ExecutionStep `json:"steps,omitempty"`
 	// RevertToDept / RevertToStage / RevertToNodeID / RevertToName are set when
 	// this branch is a back-edge (guarded revert/loop flow) instead of a forward branch.
 	RevertToDept   string `json:"revert_to_dept,omitempty"`

@@ -104,6 +104,11 @@ func (e *expander) steps(steps []ExecutionStep, prefix string, local map[string]
 			b := &st.Exclusive[j]
 			b.Target = scoped(prefix, b.Target)
 			b.RevertToDept = scoped(prefix, b.RevertToDept)
+			nested, err := e.steps(b.Steps, prefix, local, chain, down)
+			if err != nil {
+				return nil, err
+			}
+			b.Steps = nested
 		}
 		if sw := st.SubWorkflow; sw != nil {
 			nested, err := e.steps(sw.Plan.Steps, prefix, local, chain, down)
@@ -265,6 +270,9 @@ func callNodeIDs(steps []ExecutionStep, into map[string]bool) map[string]bool {
 		for _, b := range st.Parallel {
 			callNodeIDs(b.Steps, into)
 		}
+		for _, b := range st.Exclusive {
+			callNodeIDs(b.Steps, into)
+		}
 		if st.SubWorkflow != nil {
 			callNodeIDs(st.SubWorkflow.Plan.Steps, into)
 		}
@@ -327,6 +335,11 @@ func checkStepBoundaries(plan string, steps []ExecutionStep, bad func(string, bo
 			return fmt.Errorf("dsl: plan %q: a boundary on call %q must name a target department or terminate, not both or neither", plan, cp.NodeID)
 		}
 		for _, b := range st.Parallel {
+			if err := checkStepBoundaries(plan, b.Steps, bad); err != nil {
+				return err
+			}
+		}
+		for _, b := range st.Exclusive {
 			if err := checkStepBoundaries(plan, b.Steps, bad); err != nil {
 				return err
 			}

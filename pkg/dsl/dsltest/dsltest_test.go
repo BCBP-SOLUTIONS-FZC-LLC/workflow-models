@@ -113,3 +113,44 @@ func TestLibraryCallBoundaries(t *testing.T) {
 		t.Errorf("send task = %+v, want Send_Withdraw sending withdraw", send)
 	}
 }
+
+// TestFlowOrder pins what execution relies on in the golden: each stretch of
+// a lane is its own department, so running the steps in order runs the tasks
+// in flow order; the review branch carries its call in its own steps; and the
+// two parallel branches in one lane are distinct departments.
+func TestFlowOrder(t *testing.T) {
+	var c dsl.CompiledCollaboration
+	if err := json.Unmarshal(dsltest.FlowOrder(), &c); err != nil {
+		t.Fatalf("golden does not decode: %v", err)
+	}
+	expanded, err := dsl.ExpandCalls(&c, 0)
+	if err != nil {
+		t.Fatalf("golden does not expand: %v", err)
+	}
+	main := expanded.Plans[0]
+
+	for key, iam := range map[string]string{
+		"Engineering/Draft": engIAM, "Ops/Check": opsIAM, "Engineering~2/Approve": engIAM, "Ops~2/Fix": opsIAM,
+		"Ops~3/Pack": opsIAM, "Ops~4/Bill": opsIAM, "Engineering~3/Close": engIAM,
+		"CA_Review::Process_Review/Review_Task": engIAM,
+	} {
+		if d, s := stage(main, key); s == nil || d.IAMDepartmentID != iam {
+			t.Errorf("stage %s: department %+v, want one in IAM department %s", key, d, iam)
+		}
+	}
+
+	steps := main.Execution.Steps
+	if len(steps) != 4 || !reflect.DeepEqual(steps[0].Sequential, []string{"Engineering", "Ops", "Engineering~2"}) ||
+		!reflect.DeepEqual(steps[3].Sequential, []string{"Engineering~3"}) {
+		t.Fatalf("steps = %+v, want the opening stretch, the route, the fork and Close", steps)
+	}
+	route := steps[1].Exclusive
+	if len(route) != 2 || route[0].ConditionExpression != `decision == "review"` || route[0].Steps[0].SubWorkflow == nil ||
+		route[0].Steps[0].SubWorkflow.NodeID != "CA_Review" || !reflect.DeepEqual(route[1].Steps[0].Sequential, []string{"Ops~2"}) {
+		t.Errorf("route = %+v, want the review call on its branch and Fix on the other", route)
+	}
+	fork := steps[2].Parallel
+	if len(fork) != 2 || fork[0].DeptID == fork[1].DeptID {
+		t.Errorf("fork = %+v, want two branches with distinct departments", fork)
+	}
+}

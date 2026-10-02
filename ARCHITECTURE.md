@@ -41,7 +41,7 @@ depends on anything else in this module.
 ### `pkg/dsl`
 
 The compiled-plan DSL: `CompiledCollaboration` (root) → `CompiledPlan` (one
-per BPMN pool) → `DepartmentDef` (one per lane) → `StageDef` (one per task)
+per BPMN pool) → `DepartmentDef` (one per lane segment) → `StageDef` (one per task)
 → `ExecutionPlan`/`ExecutionStep` (control flow). See design doc §2 for the
 full field-by-field reference.
 
@@ -49,7 +49,7 @@ full field-by-field reference.
 |------|------|
 | `CompiledCollaboration` | Root artifact — main pool, every compiled pool, inter-pool messages |
 | `CompiledPlan` | One compiled BPMN pool |
-| `DepartmentDef` | One compiled BPMN lane |
+| `DepartmentDef` | One stretch of a BPMN lane on one path |
 | `StageDef` | One compiled task/stage |
 | `ExecutionPlan` / `ExecutionStep` | The step sequence driving the workflow function |
 | `ParallelBranch`, `ExclusiveBranch`, `SubWorkflowStep`, `CallPoolStep`, `CallPlanStep` | `ExecutionStep` variants |

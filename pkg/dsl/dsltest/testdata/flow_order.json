@@ -1,0 +1,283 @@
+{
+  "main_plan": "Golden Flow",
+  "plans": [
+    {
+      "name": "Golden Flow",
+      "task_queue": "wf-queue-default",
+      "departments": [
+        {
+          "id": "Engineering",
+          "label": "Engineering",
+          "iam_department_id": "2200a5ae-2466-54f7-a1d8-243106e05705",
+          "stages": [
+            {
+              "type": "prep",
+              "activity": "PrepActivity",
+              "node_id": "Draft",
+              "name": "Draft",
+              "role": "engineering",
+              "default_assignees": [
+                "018f2d3c-0000-7000-8000-0000000000a1"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "Ops",
+          "label": "Ops",
+          "iam_department_id": "92fd92cf-4b2c-58dc-bf98-f3d0af729876",
+          "stages": [
+            {
+              "type": "review",
+              "activity": "ReviewActivity",
+              "node_id": "Check",
+              "name": "Check",
+              "role": "ops",
+              "default_assignees": [
+                "018f2d3c-0000-7000-8000-0000000000a1"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "Engineering~2",
+          "label": "Engineering",
+          "iam_department_id": "2200a5ae-2466-54f7-a1d8-243106e05705",
+          "stages": [
+            {
+              "type": "approve",
+              "activity": "ApproveActivity",
+              "node_id": "Approve",
+              "name": "Approve",
+              "role": "engineering",
+              "default_assignees": [
+                "018f2d3c-0000-7000-8000-0000000000a1"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "Ops~2",
+          "label": "Ops",
+          "iam_department_id": "92fd92cf-4b2c-58dc-bf98-f3d0af729876",
+          "stages": [
+            {
+              "type": "prep",
+              "activity": "PrepActivity",
+              "node_id": "Fix",
+              "name": "Fix",
+              "role": "ops",
+              "default_assignees": [
+                "018f2d3c-0000-7000-8000-0000000000a1"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "Ops~3",
+          "label": "Ops",
+          "iam_department_id": "92fd92cf-4b2c-58dc-bf98-f3d0af729876",
+          "stages": [
+            {
+              "type": "prep",
+              "activity": "PrepActivity",
+              "node_id": "Pack",
+              "name": "Pack",
+              "role": "ops",
+              "default_assignees": [
+                "018f2d3c-0000-7000-8000-0000000000a1"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "Ops~4",
+          "label": "Ops",
+          "iam_department_id": "92fd92cf-4b2c-58dc-bf98-f3d0af729876",
+          "stages": [
+            {
+              "type": "prep",
+              "activity": "PrepActivity",
+              "node_id": "Bill",
+              "name": "Bill",
+              "role": "ops",
+              "default_assignees": [
+                "018f2d3c-0000-7000-8000-0000000000a1"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "Engineering~3",
+          "label": "Engineering",
+          "iam_department_id": "2200a5ae-2466-54f7-a1d8-243106e05705",
+          "stages": [
+            {
+              "type": "approve",
+              "activity": "ApproveActivity",
+              "node_id": "Close",
+              "name": "Close",
+              "role": "engineering",
+              "default_assignees": [
+                "018f2d3c-0000-7000-8000-0000000000a1"
+              ]
+            }
+          ]
+        }
+      ],
+      "execution": {
+        "steps": [
+          {
+            "sequential": [
+              "Engineering",
+              "Ops",
+              "Engineering~2"
+            ]
+          },
+          {
+            "exclusive": [
+              {
+                "target_stage": "sub_workflow",
+                "target_node_id": "CA_Review",
+                "target_name": "Review",
+                "condition_expression": "decision == \"review\"",
+                "steps": [
+                  {
+                    "call_plan": {
+                      "node_id": "CA_Review",
+                      "name": "Review",
+                      "plan": "Process_Review@v2",
+                      "departments": {
+                        "Process_Review": "Engineering"
+                      },
+                      "assignees": {
+                        "Review_Check::Check_Task": "018f2d3c-0000-7000-8000-0000000000c1"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "target": "Ops~2",
+                "target_stage": "prep",
+                "target_node_id": "Fix",
+                "target_name": "Fix",
+                "condition_expression": "",
+                "steps": [
+                  {
+                    "sequential": [
+                      "Ops~2"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "parallel": [
+              {
+                "dept": "Ops~3",
+                "steps": [
+                  {
+                    "sequential": [
+                      "Ops~3"
+                    ]
+                  }
+                ]
+              },
+              {
+                "dept": "Ops~4",
+                "steps": [
+                  {
+                    "sequential": [
+                      "Ops~4"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "sequential": [
+              "Engineering~3"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Process_Check@v1",
+      "departments": [
+        {
+          "id": "Process_Check",
+          "label": "Process_Check",
+          "stages": [
+            {
+              "type": "review",
+              "activity": "ReviewActivity",
+              "node_id": "Check_Task",
+              "name": "Check",
+              "role": "checker"
+            }
+          ]
+        }
+      ],
+      "execution": {
+        "steps": [
+          {
+            "sequential": [
+              "Process_Check"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Process_Review@v2",
+      "departments": [
+        {
+          "id": "Process_Review",
+          "label": "Process_Review",
+          "stages": [
+            {
+              "type": "review",
+              "activity": "ReviewActivity",
+              "node_id": "Review_Task",
+              "name": "Review",
+              "role": "reviewer",
+              "default_assignees": [
+                "018f2d3c-0000-7000-8000-0000000000a1"
+              ],
+              "boundary_message": {
+                "message_name": "review-recalled",
+                "interrupting": true,
+                "terminates": true
+              }
+            }
+          ]
+        }
+      ],
+      "execution": {
+        "steps": [
+          {
+            "sequential": [
+              "Process_Review"
+            ]
+          },
+          {
+            "call_plan": {
+              "node_id": "Review_Check",
+              "name": "Check",
+              "plan": "Process_Check@v1",
+              "departments": {
+                "Process_Check": "Process_Review"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "messages": [],
+  "schema_version": 1
+}

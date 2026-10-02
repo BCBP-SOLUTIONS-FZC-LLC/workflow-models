@@ -47,7 +47,7 @@ Go 1.26, zero external dependencies. Two packages, `pkg/dsl` and `pkg/enums`, pl
 
 Both failure classes are the same shape: a second source of truth kept in sync by discipline. Publishing the real Go structs as an importable module turns a silent runtime surprise into a compile-time error the moment a consumer bumps the dependency.
 
-**Status.** Pre-release `v1.3.0-rc.3`, pinned by Definition Service and Execution Service. Both reference the module's types directly (§8).
+**Status.** Pre-release `v1.4.0-rc.1`, pinned by Definition Service and Execution Service. Both reference the module's types directly (§8).
 
 **Relationship to the internal HTTP contracts.** The calls between the two services — the compiled-plan read, the archive guard and the pause of a removed member's tasks — are specified in OpenAPI documents each service owns and both test against (`definition_service.md` §3.4, `execution_service.md` §5.3). This module doesn't wrap or duplicate them; it holds the plan's own shape.
 
@@ -94,7 +94,7 @@ One `CompiledPlan` per BPMN pool/participant.
 | `Name` | `string` | `name` | Pool name — matches a `SourcePlan`/`TargetPlan`/`MainPlan` reference. |
 | `TaskQueue` | `string` | `task_queue,omitempty` | Intended to resolve the Temporal task queue this pool's instances run on, tier-routed from the tenant's plan (`wf-queue-default` vs. an isolated `wf-queue-<tenant_uuid>`). |
 | `Ignored` | `bool` | `ignored,omitempty` | True for a pool the modeler marked out of scope — produces an admin-stub task, not real work. |
-| `Departments` | `[]DepartmentDef` | `departments` | Every BPMN lane in this pool. |
+| `Departments` | `[]DepartmentDef` | `departments` | Every lane segment in this pool: a stretch of one lane on one path. |
 | `Execution` | `ExecutionPlan` | `execution` | The step sequence driving the workflow function (§2.4). |
 | `VisualElements` | `[]VisualElementDef` | `visual_elements,omitempty` | Diagram-only elements with no execution semantics. |
 
@@ -102,12 +102,12 @@ One `CompiledPlan` per BPMN pool/participant.
 
 | Field | Type | JSON tag | Purpose |
 | --- | --- | --- | --- |
-| `ID` | `string` | `id` | BPMN lane identifier — a local, plan-scoped key. |
+| `ID` | `string` | `id` | The segment's plan-scoped key: the lane's name for its first segment, `<lane>~<n>` for the n-th. |
 | `Label` | `string` | `label` | Human-readable lane name. |
 | `IAMDepartmentID` | `string` | `iam_department_id,omitempty` | Meant to carry a real IAM department UUID. |
 | `Ignore` | `bool` | `ignore,omitempty` | Lane marked out of scope. |
 | `Props` | `map[string]string` | `props,omitempty` | Free-form lane-level properties. |
-| `Stages` | `[]StageDef` | `stages` | Every task/stage assigned to this lane (§2.3). |
+| `Stages` | `[]StageDef` | `stages` | The segment's tasks, in the order the flow reaches them (§2.3). |
 
 `VisualElementDef`:
 
@@ -117,13 +117,13 @@ One `CompiledPlan` per BPMN pool/participant.
 | `ID` | `string` | `id` | BPMN element ID. |
 | `Name` | `string` | `name,omitempty` | Human-readable label. |
 
-**Definition populates it via** `bpmncore/compile.go`'s per-pool assembly and `bpmncore/qualify.go`'s lane-to-department resolution. `ID` is the lane's `name`; `IAMDepartmentID` is the lane's `dept_id` property (`bpmncore/traverse.go`'s `DeptOf`, `bpmncore/graph.go`'s `DeptIDFor`). A module lane without `dept_id` is an open slot whose `IAMDepartmentID` a calling `CallPlanStep` supplies (§2.6). `CompiledPlan.TaskQueue` is documented intent only — no compiler logic resolves a tenant's plan tier into a queue name yet (Appendix B).
+**Definition populates it via** `bpmncore/compile.go`'s per-pool assembly and `bpmncore/state.go`'s lane segments (`SegmentOf`); `bpmncore/qualify.go` prefixes a collaboration pool's department IDs. A segment is a stretch of one lane on one path. The flow starts a new segment when it enters a lane from another lane, a gateway, a subprocess or a call, and a gateway's branch and a boundary's path start their own, so running a department's stages in order runs the tasks in the order the arrows point. `ID` is the lane's `name` for the lane's first segment and `<lane>~<n>` for the n-th; lane names cannot contain `~`, `/` or `::`. `Label` is the lane's `name` and `IAMDepartmentID` the lane's `dept_id` property (`bpmncore/call.go`'s `LaneDeptID`). A module lane without `dept_id` is an open slot whose `IAMDepartmentID` a calling `CallPlanStep` supplies (§2.6), with one binding for each of the lane's segments. `CompiledPlan.TaskQueue` is documented intent only — no compiler logic resolves a tenant's plan tier into a queue name yet (Appendix B).
 
 **Execution consumes it via** `execution_service.md` §3.2 (Worker Topology & Task-Queue Registration) for `TaskQueue` (snapshotted once at instantiation onto `workflow_instance.task_queue`); `Ignored` drives the ignored-pool admin-stub dispatch (§8.2's worked example); `IAMDepartmentID` is the field Execution's own `workflow_task.department_id uuid NOT NULL` column depends on and currently cannot populate correctly until Definition ships a real capture — a confirmed cross-repo blocker (Appendix B), not a mere type mismatch.
 
 ### 2.3 `StageDef` / `BoundaryTimer`
 
-One `StageDef` per task/stage in a department's lane.
+One `StageDef` per task/stage in a department's lane segment.
 
 | Field | Type | JSON tag | Purpose |
 | --- | --- | --- | --- |
@@ -203,6 +203,7 @@ Execution: `execution_service.md` §2.7 (Force-Back and the Parallel-Gateway His
 | `TargetName` | `string` | `target_name,omitempty` | Human-readable target name. |
 | `ConditionExpression` | `string` | `condition_expression` | Evaluated at runtime; empty string is the implicit-else branch. |
 | `Terminates` | `bool` | `terminates,omitempty` | True when this branch leads directly to an end event. |
+| `Steps` | `[]ExecutionStep` | `steps,omitempty` | The forward branch's own steps up to the gateway's join, run instead of `Target` when set. |
 | `RevertToDept` / `RevertToStage` / `RevertToNodeID` / `RevertToName` | `string` | `revert_to_*,omitempty` | Set when this branch is a back-edge (a guarded revert/loop) rather than a forward branch. |
 
 Execution: `execution_service.md` §2.6 (Exclusive-Gateway Evaluation) — a small built-in comparator evaluates `ConditionExpression` for today's dominant binary case; the one empty-`ConditionExpression` branch is the implicit else. The `RevertTo*` fields drive force-back/cyclic-revert flow (§2.7), bounded by Definition's own max-loop-iteration guard against an unbounded revert cycle — the same bound that lets Execution's design skip Continue-As-New (`execution_service.md` Appendix A.2 #28).
@@ -287,7 +288,7 @@ Execution: the instance-wide, node-keyed message-correlation buffer (§2.1 above
 
 `func ExpandCalls(c *CompiledCollaboration, maxStages int) (*CompiledCollaboration, error)` returns a copy of `c` in which every `CallPlan` step, in every plan, is replaced by the `SubWorkflowStep` the interpreter already runs. It is a pure function of `c`: the same input always gives the same output, and `c` is never modified.
 
-- **The step.** The `SubWorkflowStep` takes the call's `NodeID`, `Name` and boundary paths. Its `Plan` holds the called plan's steps, with any calls inside them expanded the same way.
+- **The step.** The `SubWorkflowStep` takes the call's `NodeID`, `Name` and boundary paths. Its `Plan` holds the called plan's steps, with any calls inside them expanded the same way. Calls are found in every step list: the top level, parallel and exclusive branch `Steps`, and subprocess bodies.
 - **Departments.** Each department of the called plan is cloned into the calling plan with the ID `<NodeID>::<department ID>`. A nested call composes the prefix, so a department reached through two calls is `<outer NodeID>::<inner NodeID>::<department ID>`. `CallScopeSeparator` holds `"::"`.
   - A department bound in `Departments` takes the bound department's `Label` and `IAMDepartmentID`.
   - An unbound department keeps its own.
@@ -308,6 +309,7 @@ Definition runs it on the plan it has just compiled, to count stages and to read
 - **`LibraryCalls() []byte`** is a workflow, `Golden`, with two lanes (Engineering and Ops, each with a catalogue `dept_id`). Each lane runs a call to library module `Process_Review` version 2: `CA_Eng`, and `CA_Ops` whose `Assignees` gives `Review_Task` a default user. `Process_Review` has no lanes; its `Review_Task` names a user and has an interrupting boundary on the module's own message `review-recalled`, declared in the module's document, that ends the module's flow. Its call `Review_Check` calls `Process_Check` version 1, whose `Check_Task` names nobody; each workflow call names that user by the path `Review_Check::Check_Task`. Once expanded, the module tasks' node keys are `CA_Eng::Process_Review/Review_Task`, `CA_Eng::Review_Check::Process_Check/Check_Task` and the same under `CA_Ops`: a laneless module's department is named by its process id, so the keys stay the same when a call moves module version. The file is `testdata/library_calls.json` (`LibraryCallsFile`).
 - **`LibraryCallBoundaries() []byte`** is a workflow, `Golden Boundaries`, with one lane running `Process_Review` twice: `CA_Timer` with an interrupting P5D timer boundary, then a send task delivering message `withdraw`, then `CA_Message` with an interrupting message boundary on `withdraw`. Both boundaries lead straight to an end event, so they terminate. The workflow's `withdraw` and the module's `review-recalled` share a message id in their own documents and stay distinct. The file is `testdata/library_call_boundaries.json` (`LibraryCallBoundariesFile`).
 - **Who writes them.** Only Definition's `TestGolden`, which publishes the fixture through the real compiler and library resolution. The test fails when a published plan and its golden differ; `-update-golden`, run with a Go workspace that uses a workflow-models checkout, rewrites the files. Nobody edits them by hand.
+- **`FlowOrder() []byte`** is a workflow, `Golden Flow`, with two lanes whose tasks run in flow order: Draft (Engineering), Check (Ops), Approve (Engineering again); an exclusive gateway whose branch on `decision == "review"` calls `Process_Review` (as in `LibraryCalls`) and whose other branch runs Fix (Ops), joining after; a parallel gateway whose two branches, Pack and Bill, are both in Ops; then Close (Engineering). Each stretch of a lane is its own department, so Approve's node key is `Engineering~2/Approve` and Close's `Engineering~3/Close`, the call is in its branch's `Steps`, and the two Ops branches have distinct departments. The file is `testdata/flow_order.json` (`FlowOrderFile`).
 - **Who reads them.** `dsltest`'s own tests pin the facts consumers rely on after `ExpandCalls`: each call's tasks run in the caller lane's IAM department, the node keys are exact, the call-site, path and task defaults apply, the module's message keeps its own name, and each boundary call keeps its interrupting path, which terminates. Execution's tests decode, expand and run them: eligibility and `override_map` by node key, each call's tasks in the caller's department, an end-to-end run through real Temporal, and each boundary ending the instance.
 
 A change to the compiler's output therefore shows up as a failing Definition test, and a new golden as a changed file in workflow-models that Execution's tests run against.
@@ -519,7 +521,7 @@ That doc made the original DSL-half decision (shared module, schema versioning, 
 | This module's own event `.v2` dual-publish window | Execution team | **N/A** — moot: `pkg/events` was retired (rev 2.4, §3) before this was ever needed; Execution's own outbound catalogue's 30-day precedent (`execution_service.md` §6.8) remains the number to carry over if an event is ever added back (§6.2) |
 | `CompiledPlan.TaskQueue` tier-based routing logic | Definition Service | Documented intent only, zero compiler logic exists (§2.2) |
 | `DepartmentDef.IAMDepartmentID` never populated | Definition Service | Hard cross-repo blocker — Execution's `workflow_task.department_id uuid NOT NULL` can't be populated until Definition reads a real IAM department UUID from a BPMN lane's `extensionElements` (§2.2) |
-| Module tag/publish (`v1.0.0`) | Definition Service | `v1.3.0-rc.3` pre-release tagged and pinned by both services; `v1.0.0` not yet cut (§8) |
+| Module tag/publish (`v1.0.0`) | Definition Service | `v1.4.0-rc.1` pre-release tagged and pinned by both services; `v1.0.0` not yet cut (§8) |
 
 ### Appendix B.1: Repo Readiness Checklist
 
@@ -560,3 +562,4 @@ One row per §12 gap — Blocker (must exist before the `v1.0.0` tag) or Deferre
 | 2.11 | 2026-10-01 | **Version and package references current** (§1, §3, §5, Appendix B). §1 Status and Appendix B name `v1.3.0-rc.2`, pinned by both services. §3 reserves `pkg/events` for event payloads shared by both services. §5 lists `AllowedBPMNElements` with the `StageType` constants in `pkg/enums`. |
 | 2.12 | 2026-10-01 | **Node keys, human tasks and task names are shared** (§2.3). `NodeKey` and `StageDef.CreatesHumanTask` are the one definition of a stage's key and of whether it gets an assignee; Definition and Execution each carried their own copies. `StageDef.Name` carries the task's name, which Definition's node and module-contract reads return; the goldens are re-made with it. §1 and Appendix B name the release. Released as `v1.3.0-rc.3`. |
 | 2.13 | 2026-10-01 | **The gRPC link is gone** (§1, §6.1, §11, Appendix B). The two services call each other over internal HTTP, each endpoint specified in an OpenAPI document both test against (`definition_service.md` §3.4, `execution_service.md` §5.3). The compiled-plan read returns the plan as a JSON object and no separate `dsl_schema_version`: `CompiledCollaboration.SchemaVersion` is the one source of the schema version. |
+| 2.14 | 2026-10-02 | **Exclusive branches carry their steps; departments are lane segments** (§1, §2.2, §2.3, §2.5, §2.6, §2.7, Appendix B). `ExclusiveBranch.Steps` holds a forward branch's work up to the join and is run instead of `Target`: a branch could name only one department and stage, so a call or subprocess on it, a second lane, or an inner gateway had no place in the plan. `ExpandCalls` expands calls inside branch steps, follows `Assignees` paths through them, and checks their boundaries. A `DepartmentDef` is a stretch of one lane on one path, keyed by the lane's name, then `<lane>~<n>`: a department was a whole lane, and running it ran every task in the lane, so a flow returning to a lane, or two branches in one lane, ran tasks out of the order the arrows give. New golden `FlowOrder` (§2.7). §1 and Appendix B name the release. Released as `v1.4.0-rc.1`. |
